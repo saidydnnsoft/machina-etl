@@ -2,6 +2,14 @@ import functions from "@google-cloud/functions-framework";
 import { BigQuery } from "@google-cloud/bigquery";
 import dotenv from "dotenv";
 import fs from "fs";
+import {
+  getDate,
+  getYear,
+  startOfMonth,
+  startOfQuarter,
+  startOfWeek,
+  startOfYear,
+} from "date-fns";
 
 if (fs.existsSync(".env")) {
   dotenv.config();
@@ -28,7 +36,7 @@ functions.http("runEtl", async (req, res) => {
       }
     }
 
-    await load_all_data(transformedData);
+    // await load_all_data(transformedData);
     res.send("✅ ETL complete!");
   } catch (error) {
     console.error("❌ ETL failed:", error.message);
@@ -46,7 +54,15 @@ functions.http("runEtl", async (req, res) => {
 
 // --- Extraction ---
 async function extract() {
-  const tableNames = ["registro_actividad", "equipo", "usuario", "obra"];
+  const tableNames = [
+    "registro_actividad",
+    "equipo",
+    "usuario",
+    "obra",
+    "precio_etiqueta",
+    "etiquetas_equipos",
+    "viaje",
+  ];
 
   const extractedTablesArray = await Promise.all(
     tableNames.map((name) => extractOne(name))
@@ -122,14 +138,19 @@ function transform_dim_usuario(usuarios_arr) {
   }));
 }
 
-function transform_dim_equipo(equipos_arr) {
+function transform_dim_equipo(equipos_arr, etiquetas_equipos_arr) {
+  const etiquetas_equipos_map = new Map(
+    etiquetas_equipos_arr.map((et) => [et["Row ID"], et])
+  );
   if (!equipos_arr) return [];
-  return equipos_arr.map((u) => ({
-    id_equipo: u["Row ID"],
-    codigo_interno: u.codigo_interno ?? null,
-    descripcion: u.descripcion ?? null,
-    tipo_equipo: u.tipo_equipo ?? null,
-    tipo_activo: u.tipo_activo ?? null,
+  return equipos_arr.map((e) => ({
+    id_equipo: e["Row ID"],
+    codigo_interno: e.codigo_interno ?? null,
+    descripcion: e.descripcion ?? null,
+    tipo_equipo: e.tipo_equipo ?? null,
+    tipo_activo: e.tipo_activo ?? null,
+    etiqueta_equipo:
+      etiquetas_equipos_map.get(e.id_etiqueta_equipo)?.etiqueta ?? null,
   }));
 }
 
@@ -171,6 +192,9 @@ function transform_dim_fecha(uniqueDateStringsSet) {
 
     dimDateRows.push({
       id_fecha: dateStr,
+      fecha: `${getDate(dateObj).toString().padStart(2, "0")}/${(month + 1)
+        .toString()
+        .padStart(2, "0")}/${getYear(dateObj)}`,
       anio: year,
       num_mes: month,
       nombre_mes: months[month - 1],
@@ -178,43 +202,83 @@ function transform_dim_fecha(uniqueDateStringsSet) {
       num_dia_semana: dayOfWeek,
       nombre_dia: days[dayOfWeek],
       trimestre: `Q${Math.floor((month - 1) / 3) + 1}`,
+      inicio_mes: startOfMonth(dateObj).toISOString().split("T")[0],
+      inicio_anio: startOfYear(dateObj).toISOString().split("T")[0],
+      inicio_trimestre: startOfQuarter(dateObj).toISOString().split("T")[0],
+      inicio_semana: startOfWeek(dateObj).toISOString().split("T")[0],
     });
   }
   return dimDateRows;
 }
 
 // Fact Transformer
-function transform_fact_produccion(registro_actividad_arr) {
+function transform_fact_produccion(rawData) {
+  const {
+    registro_actividad_arr,
+    equipo_arr,
+    usuario_arr,
+    obra_arr,
+    precio_etiqueta_arr,
+    etiquetas_equipos_arr,
+    viaje_arr,
+  } = rawData;
+
+  const equipos_map = new Map(equipo_arr.map((e) => [e["Row ID"], e]));
+  const viajes_map = new Map(viaje_arr.map((v) => [v["Row ID"], v]));
+  const precios_etiquetas_map = new Map();
+  precio_etiqueta_arr.forEach((p) => {
+    const key = `${p.id_obra}-${p.id_etiqueta_equipo}-${p.unidad_de_medida}${
+      p.id_destino ? `-${p.id_destino}` : ""
+    }`;
+    if (!precios_etiquetas_map.has(key)) {
+      precios_etiquetas_map.set([p]);
+    } else {
+      precios_etiquetas_map.set(key, [...precios_etiquetas_map.get(key), p]);
+    }
+  });
+
   const registros = (registro_actividad_arr || [])
-    .map((registro) => ({
-      id_registro: registro["Row ID"] ?? null,
-      id_equipo: registro.id_equipo ?? null,
-      id_operador: registro.operador ?? null,
-      id_responsable_de_obra: registro.responsable_de_obra ?? null,
-      id_obra: registro.id_obra ?? null,
-      id_fecha: registro.hora_inicial
-        ? formatToBQDate(registro.hora_inicial)
-        : null,
-      estado: registro.estado ?? null,
-      estado_aprobacion: registro.estado_aprobacion ?? null,
-      varado: registro.varado === "Y" ? "Sí" : "No",
-      horas_trabajadas: parseFloat(registro.horas_trabajadas_maquina || 0),
-      kilometros_recorridos: parseFloat(registro.kilometros_recorridos || 0),
-      combustible: parseFloat(registro.combustible || 0),
-      horas_varado: parseFloat(registro.horas_varado || 0),
-      heod: parseFloat(registro.heod || 0),
-      heon: parseFloat(registro.heon || 0),
-      hefd: parseFloat(registro.hefd || 0),
-      hefn: parseFloat(registro.hefn || 0),
-      rno: parseFloat(registro.rno || 0),
-      rnf: parseFloat(registro.rnf || 0),
-      hf: parseFloat(registro.hf || 0),
-      valor_extras_y_recargos: parseFloat(
-        registro.valor_extras_y_recargos_vc || 0
-      ),
-      valor_activo: parseFloat(registro.valor_activo_vc || 0),
-      num_viajes: parseFloat(registro.num_viajes_vc || 0),
-    }))
+    .map((registro) => {
+      // necesito buscar el tipo activo del equipo de acuerdo al id_equipo
+      // necesito ir a buscar los related viajes en la tabla viaje
+      // del viaje necesito saber el destino
+      // necesito la etiqueta del equipo
+      // necesito ir a buscar el precio del equipo en esta obra, para la etiqueta de acuerdo a la fecha
+      // valor activo EQUIPO - HORA
+      // +
+      // valor activo VEHICULO - DIA
+      // +
+      // valor viajes - RELATED VIAJES
+      return {
+        id_registro: registro["Row ID"] ?? null,
+        id_equipo: registro.id_equipo ?? null,
+        id_operador: registro.operador ?? null,
+        id_responsable_de_obra: registro.responsable_de_obra ?? null,
+        id_obra: registro.id_obra ?? null,
+        id_fecha: registro.hora_inicial
+          ? formatToBQDate(registro.hora_inicial)
+          : null,
+        estado: registro.estado ?? null,
+        estado_aprobacion: registro.estado_aprobacion ?? null,
+        varado: registro.varado === "Y" ? "Sí" : "No",
+        horas_trabajadas: parseFloat(registro.horas_trabajadas_maquina || 0),
+        kilometros_recorridos: parseFloat(registro.kilometros_recorridos || 0),
+        combustible: parseFloat(registro.combustible || 0),
+        horas_varado: parseFloat(registro.horas_varado || 0),
+        heod: parseFloat(registro.heod || 0),
+        heon: parseFloat(registro.heon || 0),
+        hefd: parseFloat(registro.hefd || 0),
+        hefn: parseFloat(registro.hefn || 0),
+        rno: parseFloat(registro.rno || 0),
+        rnf: parseFloat(registro.rnf || 0),
+        hf: parseFloat(registro.hf || 0),
+        valor_extras_y_recargos: parseFloat(
+          registro.valor_extras_y_recargos_vc || 0
+        ),
+        valor_activo: parseFloat(registro.valor_activo_vc || 0),
+        num_viajes: parseFloat(registro.num_viajes_vc || 0),
+      };
+    })
     .filter(Boolean);
 
   return registros;
@@ -240,14 +304,15 @@ function transform(tables) {
   transformed_data.dim_fecha = transform_dim_fecha(uniqueDateStrings);
 
   // --- 2. Transform Other Dimensions ---
-  transformed_data.dim_equipo = transform_dim_equipo(tables.equipo);
+  transformed_data.dim_equipo = transform_dim_equipo(
+    tables.equipo,
+    tables.etiquetas_equipos
+  );
   transformed_data.dim_obra = transform_dim_obra(tables.obra);
   transformed_data.dim_usuario = transform_dim_usuario(tables.usuario);
 
   // --- 3. Transform Facts ---
-  transformed_data.fact_produccion = transform_fact_produccion(
-    tables.registro_actividad
-  );
+  transformed_data.fact_produccion = transform_fact_produccion(tables);
   return transformed_data;
 }
 
