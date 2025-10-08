@@ -2,6 +2,7 @@ import functions from "@google-cloud/functions-framework";
 import { BigQuery } from "@google-cloud/bigquery";
 import dotenv from "dotenv";
 import fs from "fs";
+import axios from "axios";
 
 if (fs.existsSync(".env")) {
   dotenv.config();
@@ -19,16 +20,74 @@ functions.http("runEtl", async (req, res) => {
     console.log("🚀 Starting ETL process...");
     const rawTables = await extract();
     console.log("✅ Extraction complete.");
+    const toClean = [];
+    const registroActividad = rawTables.registro_actividad;
+    for (const registro of registroActividad) {
+      const comentarios = registro.comentarios;
+      const varado_por = registro.varado_por;
+      const disponible_en_obra_por = registro.disponible_en_obra_por;
+      if (
+        (comentarios && comentarios.includes("\n")) ||
+        (varado_por && varado_por.includes("\n")) ||
+        (disponible_en_obra_por && disponible_en_obra_por.includes("\n"))
+      ) {
+        const comentarios_clean = comentarios
+          .replace(/ \n/g, "; ")
+          .replace(/\n/g, "; ")
+          .trim()
+          .replace(/, $/, "");
+        const varado_por_clean = varado_por
+          .replace(/ \n/g, "; ")
+          .replace(/\n/g, "; ")
+          .trim()
+          .replace(/, $/, "");
+        const disponible_en_obra_por_clean = disponible_en_obra_por
+          .replace(/ \n/g, "; ")
+          .replace(/\n/g, "; ")
+          .trim()
+          .replace(/, $/, "");
+        toClean.push({
+          "Row ID": registro["Row ID"],
+          id_obra: registro.id_obra,
+          comentarios: comentarios_clean,
+          varado_por: varado_por_clean,
+          disponible_en_obra_por: disponible_en_obra_por_clean,
+        });
 
-    const transformedData = transform(rawTables);
-    console.log("✅ Transformation complete.");
-    for (const key in transformedData) {
-      if (transformedData[key]) {
-        console.log(`Transformed ${key} count: ${transformedData[key].length}`);
+        console.log(
+          `🚀🚀🚀🚀🚀🚀🚀 ANTES: ${JSON.stringify({
+            "Row ID": registro["Row ID"],
+            ...(comentarios && { comentarios: comentarios }),
+            ...(varado_por && { varado_por: varado_por }),
+            ...(disponible_en_obra_por && {
+              disponible_en_obra_por: disponible_en_obra_por,
+            }),
+          })}`
+        );
+        console.log(
+          `🧹🧹🧹🧹🧹🧹🧹 DESPUES: ${JSON.stringify({
+            "Row ID": registro["Row ID"],
+            ...(comentarios && { comentarios: comentarios_clean }),
+            ...(varado_por && { varado_por: varado_por_clean }),
+            ...(disponible_en_obra_por && {
+              disponible_en_obra_por: disponible_en_obra_por_clean,
+            }),
+          })}`
+        );
+        console.log("--------------------------------");
       }
     }
+    console.log(`✅✅✅✅✅✅✅ toClean count: ${toClean.length}`);
 
-    await load_all_data(transformedData);
+    // const transformedData = transform(rawTables);
+    // console.log("✅ Transformation complete.");
+    // for (const key in transformedData) {
+    //   if (transformedData[key]) {
+    //     console.log(`Transformed ${key} count: ${transformedData[key].length}`);
+    //   }
+    // }
+
+    // await load_all_data(transformedData);
     res.send("✅ ETL complete!");
   } catch (error) {
     console.error("❌ ETL failed:", error.message);
@@ -413,3 +472,37 @@ async function load_all_data(transformedData) {
 
   console.log("✅ All loading tasks initiated.");
 }
+
+async function load_clean_data_to_appsheet(toClean) {
+  const appId = process.env.APP_ID;
+  const appKey = process.env.APP_KEY;
+  if (!appId || !appKey) {
+    throw new Error("APP_ID and APP_KEY environment variables must be set.");
+  }
+
+  const url = `https://www.appsheet.com/api/v2/apps/${appId}/tables/registro_actividad/Action`;
+
+  const payload = {
+    Action: "Edit",
+    Properties: {},
+    Rows: toClean,
+  };
+
+  try {
+    const response = await axios.post(url, payload, {
+      headers: {
+        ApplicationAccessKey: appKey,
+        "Content-Type": "application/json",
+      },
+    });
+
+    console.log(`✅ Updated ${toClean.length} records in AppSheet`);
+    return response.data;
+  } catch (err) {
+    console.error("Error updating AppSheet records:", err);
+    throw err;
+  }
+}
+
+// NO SIRVE LA CALEFACCION , Cogineria en mal estado , Compuertas en mal estado , Tapa del tanque de combustible no asegura
+// ncMiWkg2Mnv2tHb8ARSC3X
