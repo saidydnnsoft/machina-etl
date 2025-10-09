@@ -1,0 +1,1 @@
+export const HORAS_MAXIMAS_FESTIVAS = 8;
