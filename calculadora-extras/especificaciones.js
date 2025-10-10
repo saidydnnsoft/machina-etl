@@ -1,3 +1,5 @@
+import { validarRangosNoSuperpuestos } from "./utilitarios.js";
+
 export class EspecificacionHoraInicioYFinRequeridas {
   cumpleCon(horaInicio, horaFin) {
     return horaInicio && horaFin;
@@ -91,5 +93,19 @@ export class EspecificacionMaximo24Horas {
   }
   obtenerMensajeError() {
     return "Las duración del turno no puede ser mayor a 24 horas";
+  }
+}
+
+export class EspecificacionRangosNoSuperpuestos {
+  cumpleCon(registros) {
+    return validarRangosNoSuperpuestos(
+      registros.map((registro) => ({
+        start: registro.horaInicio,
+        end: registro.horaFin,
+      }))
+    );
+  }
+  obtenerMensajeError() {
+    return "Los rangos no pueden superponerse";
   }
 }

@@ -1,5 +1,6 @@
-import { Fecha } from "./fecha";
-import { convertirHorasDecimalesATiempo } from "./utilitarios";
+import { Fecha } from "./fecha.js";
+import { convertirHorasDecimalesATiempo } from "./utilitarios.js";
+import { construirFechaUtc } from "./utilitarios.js";
 
 export class FabricaRangosHorarios {
   constructor() {

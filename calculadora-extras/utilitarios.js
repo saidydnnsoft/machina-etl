@@ -1,5 +1,5 @@
-import { EspecificacionFechaValida } from "./especificaciones";
-import { Fecha } from "./fecha";
+import { EspecificacionFechaValida } from "./especificaciones.js";
+import { Fecha } from "./fecha.js";
 
 export function convertirHorasDecimalesATiempo(horasDecimales) {
   const horas = Math.floor(horasDecimales);
@@ -42,4 +42,46 @@ export function construirFechas(...textoFechas) {
     if (!textoFecha) return undefined;
     return new Fecha(construirFechaAPartirDeTexto(textoFecha));
   });
+}
+
+export function calcularHorasTrabajadas(
+  horaInicio,
+  horaFin,
+  horaInicioDescanso,
+  horaFinDescanso
+) {
+  const duracionDescanso =
+    new Date(horaFinDescanso) - new Date(horaInicioDescanso) || 0;
+
+  return (
+    (new Date(horaFin) - new Date(horaInicio) - duracionDescanso) /
+    1000 /
+    60 /
+    60
+  );
+}
+
+export function validarRangosNoSuperpuestos(dateRanges) {
+  const parsedDates = dateRanges.map((range) => {
+    const start = construirFechaAPartirDeTexto(range.start);
+    const end = construirFechaAPartirDeTexto(range.end);
+
+    if (end <= start) {
+      throw new Error(
+        `Invalid date range: The end date must be after the start date. Start: ${range.start}, End: ${range.end}`
+      );
+    }
+
+    return { start, end };
+  });
+
+  parsedDates.sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  for (let i = 0; i < parsedDates.length - 1; i++) {
+    if (parsedDates[i + 1].start < parsedDates[i].end) {
+      return false;
+    }
+  }
+
+  return true;
 }
