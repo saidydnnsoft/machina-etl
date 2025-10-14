@@ -222,7 +222,7 @@ function transform_dim_fecha(uniqueDateStringsSet) {
         .padStart(2, "0")}/${year}`,
       anio: year,
       num_mes: month,
-      nombre_mes: months[month - 1],
+      nombre_mes: `${month.toString().padStart(2, "0")}-${months[month - 1]}`,
       num_dia: day,
       num_dia_semana: dayOfWeek,
       nombre_dia: days[dayOfWeek],
