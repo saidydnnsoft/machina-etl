@@ -5,9 +5,11 @@ import { construirFechaUtc } from "./utilitarios.js";
 export class FabricaRangosHorarios {
   constructor() {
     this.tiposRango = [
-      { tipo: "Diurno", inicio: 6, fin: 21 },
-      { tipo: "Nocturno", inicio: 21, fin: 24 },
-      { tipo: "Nocturno", inicio: 0, fin: 6 },
+      { tipo: "Diurno", inicio: 6, fin: 19, vigente_desde: "2025-12-25" },
+      { tipo: "Nocturno", inicio: 19, fin: 24, vigente_desde: "2025-12-25" },
+      { tipo: "Diurno", inicio: 6, fin: 21, vigente_desde: "1970-01-01" },
+      { tipo: "Nocturno", inicio: 21, fin: 24, vigente_desde: "1970-01-01" },
+      { tipo: "Nocturno", inicio: 0, fin: 6, vigente_desde: "1970-01-01" },
     ];
   }
 
@@ -42,7 +44,8 @@ export class FabricaRangosHorarios {
     while (actual.objectoFecha < new Date(fin.objectoFecha.getTime() - 60000)) {
       const inicioRangoActual = actual;
       const rangoAplicable = this.obtenerTipoDeRango(
-        actual.obtenerHorasTotales
+        actual.obtenerHorasTotales,
+        inicioRangoActual.objectoFecha
       );
       const menorEntreFinRangoAplicableYFin = actual.esMismoDia(fin)
         ? Math.min(rangoAplicable.fin, fin.obtenerHorasTotales)
@@ -83,9 +86,15 @@ export class FabricaRangosHorarios {
     }
   }
 
-  obtenerTipoDeRango(horas) {
+  obtenerTipoDeRango(horas, fechaInicioRegistro) {
     for (const rango of this.tiposRango) {
-      if (horas >= rango.inicio && horas < rango.fin) return rango;
+      if (
+        horas >= rango.inicio &&
+        horas < rango.fin &&
+        new Date(rango.vigente_desde).getTime() <=
+          new Date(fechaInicioRegistro).getTime()
+      )
+        return rango;
     }
   }
 }
