@@ -39,7 +39,7 @@ functions.http("runEtl", async (req, res) => {
       }
     }
 
-    // await load_all_data(transformedData);
+    await load_all_data(transformedData);
     res.send("✅ ETL complete!");
   } catch (error) {
     console.error("❌ ETL failed:", error.message);
@@ -217,9 +217,9 @@ function transform_dim_fecha(uniqueDateStringsSet) {
 
     dimDateRows.push({
       id_fecha: dateStr,
-      fecha: `${getDate(dateObj).toString().padStart(2, "0")}/${(month + 1)
+      fecha_texto: `${day.toString().padStart(2, "0")}/${month
         .toString()
-        .padStart(2, "0")}/${getYear(dateObj)}`,
+        .padStart(2, "0")}/${year}`,
       anio: year,
       num_mes: month,
       nombre_mes: months[month - 1],
