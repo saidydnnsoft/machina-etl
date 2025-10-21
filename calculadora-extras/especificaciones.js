@@ -1,4 +1,5 @@
 import { validarRangosNoSuperpuestos } from "./utilitarios.js";
+import { HORAS_MAXIMAS_ORDINARIAS } from "./constantes.js";
 
 export class EspecificacionHoraInicioYFinRequeridas {
   cumpleCon(horaInicio, horaFin) {
@@ -59,7 +60,13 @@ export class EspecificacionInicioAntesDeFin {
 }
 
 export class EspecificacionHorasObligatoriasSemanaValidas {
-  cumpleCon(horasObligatoriasSemana) {
+  horasMaximasSemanales = 0;
+  cumpleCon(horasObligatoriasSemana, horaInicio) {
+    this.horasMaximasSemanales = HORAS_MAXIMAS_ORDINARIAS.find(
+      (h) =>
+        new Date(h.vigente_desde).getTime() <= new Date(horaInicio).getTime()
+    )?.horas_maximas_semanales;
+
     return (
       Array.isArray(horasObligatoriasSemana) &&
       horasObligatoriasSemana.length === 7 &&
@@ -67,11 +74,12 @@ export class EspecificacionHorasObligatoriasSemanaValidas {
         (hora) => typeof hora === "number" && hora >= 0 && hora <= 24
       ) &&
       horasObligatoriasSemana.reduce((acc, curr) => acc + curr, 0) >= 0 &&
-      horasObligatoriasSemana.reduce((acc, curr) => acc + curr, 0) <= 46
+      horasObligatoriasSemana.reduce((acc, curr) => acc + curr, 0) <=
+        this.horasMaximasSemanales
     );
   }
   obtenerMensajeError() {
-    return "Las horas obligatorias de la semana deben ser un arreglo de 7 elementos, cada uno debe ser un número entre 0 y 24 y la suma de todas las horas debe ser mayor o igual a 0 y menor o igual a 46";
+    return `Las horas obligatorias de la semana deben ser un arreglo de 7 elementos, cada uno debe ser un número entre 0 y 24 y la suma de todas las horas debe ser mayor o igual a 0 y menor o igual a ${this.horasMaximasSemanales}`;
   }
 }
 

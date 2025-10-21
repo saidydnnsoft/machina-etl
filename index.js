@@ -20,6 +20,7 @@ import os from "os";
 import { calcularHorasTrabajadas } from "./calculadora-extras/utilitarios.js";
 import { CONCEPTOS_EXTRAS } from "./calculadora-extras/conceptosExtras.js";
 import { calcularHorasExtras } from "./calculadora-extras/calculadoraHorasExtras.js";
+import { HORAS_MAXIMAS_ORDINARIAS } from "./calculadora-extras/constantes.js";
 
 // --- Main HTTP Function ---
 functions.http("runEtl", async (req, res) => {
@@ -340,14 +341,14 @@ function transform_fact_produccion(rawData) {
           const horas_obligatorias_semana = horario_obra
             ? [
                 0,
-                parseFloat(horario_obra.num_horas_lunes || 8.5),
-                parseFloat(horario_obra.num_horas_martes || 8.5),
-                parseFloat(horario_obra.num_horas_miercoles || 8.5),
-                parseFloat(horario_obra.num_horas_jueves || 8.5),
-                parseFloat(horario_obra.num_horas_viernes || 8.5),
-                parseFloat(horario_obra.num_horas_sabado || 3.5),
+                parseFloat(horario_obra.num_horas_lunes || 8),
+                parseFloat(horario_obra.num_horas_martes || 8),
+                parseFloat(horario_obra.num_horas_miercoles || 8),
+                parseFloat(horario_obra.num_horas_jueves || 8),
+                parseFloat(horario_obra.num_horas_viernes || 8),
+                parseFloat(horario_obra.num_horas_sabado || 4),
               ]
-            : [0, 8.5, 8.5, 8.5, 8.5, 8.5, 3.5];
+            : [0, 8, 8, 8, 8, 8, 4];
           const horas_max_festivas = horario_obra
             ? parseFloat(horario_obra.num_horas_festivas || 8)
             : 8;
@@ -359,6 +360,7 @@ function transform_fact_produccion(rawData) {
             horaFinDescanso: formatDate(r.hora_final_receso, true),
             horasObligatoriasSemana: horas_obligatorias_semana,
             horasMaximasFestivas: horas_max_festivas,
+            rowId: registros[0]["Row ID"],
           });
         }
       });
@@ -445,9 +447,17 @@ function transform_fact_produccion(rawData) {
             new Date(registro.hora_inicial).getTime()
         );
 
+        const horas_maximas_ordinarias_mensuales =
+          HORAS_MAXIMAS_ORDINARIAS.find(
+            (h) =>
+              new Date(h.vigente_desde).getTime() <=
+              new Date(registro.hora_inicial).getTime()
+          )?.horas_maximas_mensuales ?? 240;
+
         const valor_extras_y_recargos = Object.keys(extras_registro).reduce(
           (acc, key) =>
-            (parseFloat(salario_record?.salario ?? 0) / 240) *
+            (parseFloat(salario_record?.salario ?? 0) /
+              horas_maximas_ordinarias_mensuales) *
               parseFloat(concepto_extra_aplicable[key] ?? 0) *
               parseFloat(extras_registro[key]) +
             acc,

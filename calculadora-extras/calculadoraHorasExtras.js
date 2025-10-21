@@ -17,6 +17,10 @@ export function calcularHorasExtras(registros) {
   const especificacionRangosNoSuperpuestos =
     new EspecificacionRangosNoSuperpuestos();
   if (!especificacionRangosNoSuperpuestos.cumpleCon(registros)) {
+    console.log(
+      "registros rowId",
+      registros.map((r) => r.rowId)
+    );
     return {
       heod: 0,
       heon: 0,
@@ -72,8 +76,8 @@ export function calcularHorasExtras(registros) {
     const especificacionDescansoAnteriorAlFin =
       new EspecificacionDescansoAnteriorAlFin();
     const especificacionInicioAntesDeFin = new EspecificacionInicioAntesDeFin();
-    // const especificacionHorasObligatoriasSemana =
-    //   new EspecificacionHorasObligatoriasSemanaValidas();
+    const especificacionHorasObligatoriasSemana =
+      new EspecificacionHorasObligatoriasSemanaValidas();
     // const especificacionMaximo24Horas = new EspecificacionMaximo24Horas();
 
     const huboDescanso = horaInicioDescanso && horaFinDescanso;
@@ -115,10 +119,10 @@ export function calcularHorasExtras(registros) {
         spec: especificacionInicioAntesDeFin,
         params: [fechaInicio?.objectoFecha, fechaFin?.objectoFecha],
       },
-      // {
-      //   spec: especificacionHorasObligatoriasSemana,
-      //   params: [horasObligatoriasSemana],
-      // },
+      {
+        spec: especificacionHorasObligatoriasSemana,
+        params: [horasObligatoriasSemana, horaInicio],
+      },
       // {
       //   spec: especificacionMaximo24Horas,
       //   params: [fechaInicio?.obtenerDuracionEnHoras(fechaFin)],

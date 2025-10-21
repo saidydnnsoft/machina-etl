@@ -1,6 +1,6 @@
 export const CONCEPTOS_EXTRAS = [
   {
-    vigente_desde: "2027-07-01",
+    vigente_desde: "2027-07-01T05:00:00Z",
     heod: 0.25,
     heon: 0.75,
     hefd: 1,
@@ -10,7 +10,7 @@ export const CONCEPTOS_EXTRAS = [
     hf: 1,
   },
   {
-    vigente_desde: "2026-07-01",
+    vigente_desde: "2026-07-01T05:00:00Z",
     heod: 0.25,
     heon: 0.75,
     hefd: 1,
@@ -20,7 +20,7 @@ export const CONCEPTOS_EXTRAS = [
     hf: 0.9,
   },
   {
-    vigente_desde: "2025-07-25",
+    vigente_desde: "2025-07-01T05:00:00Z",
     heod: 0.25,
     heon: 0.75,
     hefd: 1,
@@ -30,7 +30,7 @@ export const CONCEPTOS_EXTRAS = [
     hf: 0.8,
   },
   {
-    vigente_desde: "1970-01-01",
+    vigente_desde: "1970-01-01T05:00:00Z",
     heod: 0.25,
     heon: 0.75,
     hefd: 1,
