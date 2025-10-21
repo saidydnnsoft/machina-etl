@@ -327,6 +327,51 @@ function transform_fact_produccion(rawData) {
       precios_etiquetas_map.get(llave).push(p);
     }
   });
+
+  function updateMissingDataTracker(obra_name, category, subcategory, item_data) {
+    if (!missing_data_tracker.has(obra_name)) {
+      missing_data_tracker.set(obra_name, {
+        horario: { missing: false },
+        salario: [],
+        precioEquipo: {
+          hora: [],
+          viaje: new Map(),
+          dia: []
+        }
+      });
+    }
+
+    const obra_data = missing_data_tracker.get(obra_name);
+
+    if (category === 'horario') {
+      obra_data.horario.missing = true;
+    } else if (category === 'salario') {
+      if (!obra_data.salario.includes(item_data)) {
+        obra_data.salario.push(item_data);
+      }
+    } else if (category === 'precioEquipo') {
+      if (subcategory === 'hora') {
+        if (!obra_data.precioEquipo.hora.includes(item_data)) {
+          obra_data.precioEquipo.hora.push(item_data);
+        }
+      } else if (subcategory === 'viaje') {
+        const { destino, etiqueta } = item_data;
+        if (!obra_data.precioEquipo.viaje.has(destino)) {
+          obra_data.precioEquipo.viaje.set(destino, []);
+        }
+        if (!obra_data.precioEquipo.viaje.get(destino).includes(etiqueta)) {
+          obra_data.precioEquipo.viaje.get(destino).push(etiqueta);
+        }
+      } else if (subcategory === 'dia') {
+        if (!obra_data.precioEquipo.dia.includes(item_data)) {
+          obra_data.precioEquipo.dia.push(item_data);
+        }
+      }
+    }
+  }
+
+  const missing_data_tracker = new Map();
+
   const fact_produccion = [];
   for (const [_, fechas_map] of registro_actividad_map) {
     for (const [_, registros] of fechas_map) {
@@ -353,9 +398,7 @@ function transform_fact_produccion(rawData) {
             !horario_obra?.num_horas_sabado ||
             !horario_obra?.num_horas_festivas
           ) {
-            console.log(
-              `❌ Horario incompleto en la obra: ${obra_record.nombre_obra}`
-            );
+            updateMissingDataTracker(obra_record.nombre_obra, 'horario');
           }
 
           const horas_obligatorias_semana = horario_obra
@@ -434,9 +477,7 @@ function transform_fact_produccion(rawData) {
           );
 
         if (!salario_record) {
-          console.log(
-            `❌ No se encontró el salario del operador ${operador_record.nombre} en la obra ${obra_record.nombre_obra}`
-          );
+          updateMissingDataTracker(obra_record.nombre_obra, 'salario', null, operador_record.usuario);
         }
 
         const porcentaje_a_cargar_de_extras =
@@ -536,9 +577,7 @@ function transform_fact_produccion(rawData) {
           )?.precio || 0;
 
         if (!precio_unitario_hora && tipo_activo === "EQUIPO") {
-          console.log(
-            `❌ No se encontró el precio de la hora en la obra ${obra_record.nombre_obra} para la etiqueta ${etiqueta_equipo_record.etiqueta}`
-          );
+          updateMissingDataTracker(obra_record.nombre_obra, 'precioEquipo', 'hora', etiqueta_equipo_record.etiqueta);
         }
 
         const valor_activo_por_horas =
@@ -564,9 +603,7 @@ function transform_fact_produccion(rawData) {
           !precio_unitario_dia &&
           (tipo_equipo === "CAMIONETA" || tipo_activo === "MARTILLO")
         ) {
-          console.log(
-            `❌ No se encontró el precio del día en la obra ${obra_record.nombre_obra} para la etiqueta ${etiqueta_equipo_record.etiqueta}`
-          );
+          updateMissingDataTracker(obra_record.nombre_obra, 'precioEquipo', 'dia', etiqueta_equipo_record.etiqueta);
         }
 
         if (
@@ -574,9 +611,7 @@ function transform_fact_produccion(rawData) {
           (tipo_equipo === "CAMION" || tipo_activo === "VOLQUETA") &&
           !related_viaje_ids.length
         ) {
-          console.log(
-            `❌ No se encontró el precio del día en la obra ${obra_record.nombre_obra} para la etiqueta ${etiqueta_equipo_record.etiqueta}`
-          );
+          updateMissingDataTracker(obra_record.nombre_obra, 'precioEquipo', 'dia', etiqueta_equipo_record.etiqueta);
         }
 
         const valor_activo_por_dia = parseFloat(precio_unitario_dia) * 1;
@@ -613,9 +648,7 @@ function transform_fact_produccion(rawData) {
               !precio_unitario_viaje &&
               (tipo_equipo === "CAMION" || tipo_equipo === "VOLQUETA")
             ) {
-              console.log(
-                `❌ No se encontró el precio del viaje en la obra ${obra_record.nombre_obra} para la etiqueta ${etiqueta_equipo_record.etiqueta} al destino ${destino}`
-              );
+              updateMissingDataTracker(obra_record.nombre_obra, 'precioEquipo', 'viaje', { destino, etiqueta: etiqueta_equipo_record.etiqueta });
             }
 
             return {
@@ -680,10 +713,43 @@ function transform_fact_produccion(rawData) {
     }
   }
 
-  // console.log(
-  //   "🚀 ~ transform_fact_produccion ~ fact_produccion:",
-  //   fact_produccion
-  // );
+  // Log missing data summary
+  if (missing_data_tracker.size > 0) {
+    console.log("📊 Missing Data Summary:");
+    for (const [obra_name, missing_data] of missing_data_tracker) {
+      console.log(`\n🏗️ Obra: ${obra_name}`);
+
+      if (missing_data.horario.missing) {
+        console.log("  ⏰ Horario: Missing schedule data");
+      }
+
+      if (missing_data.salario.length > 0) {
+        console.log(`  💰 Salario: Missing for operadores: ${missing_data.salario.join(', ')}`);
+      }
+
+      const precio = missing_data.precioEquipo;
+      if (precio.hora.length > 0 || precio.dia.length > 0 || precio.viaje.size > 0) {
+        console.log("  💲 Precio Equipo:");
+
+        if (precio.hora.length > 0) {
+          console.log(`    🕐 Hora: Missing for etiquetas: ${precio.hora.join(', ')}`);
+        }
+
+        if (precio.dia.length > 0) {
+          console.log(`    📅 Día: Missing for etiquetas: ${precio.dia.join(', ')}`);
+        }
+
+        if (precio.viaje.size > 0) {
+          console.log("    🚛 Viaje:");
+          for (const [destino, etiquetas] of precio.viaje) {
+            console.log(`      → ${destino}: ${etiquetas.join(', ')}`);
+          }
+        }
+      }
+    }
+  } else {
+    console.log("✅ No missing data found!");
+  }
 
   return fact_produccion;
 }
