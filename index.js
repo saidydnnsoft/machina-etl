@@ -40,7 +40,7 @@ functions.http("runEtl", async (req, res) => {
       }
     }
 
-    await load_all_data(transformedData);
+    // await load_all_data(transformedData);
     res.send("✅ ETL complete!");
   } catch (error) {
     console.error("❌ ETL failed:", error.message);
@@ -68,6 +68,7 @@ async function extract() {
     "viaje",
     "horarios_obras",
     "historico_salario",
+    "destino",
   ];
 
   const extractedTablesArray = await Promise.all(
@@ -249,6 +250,7 @@ function transform_fact_produccion(rawData) {
     viaje,
     horarios_obras,
     historico_salario,
+    destino,
   } = rawData;
 
   const registro_actividad_map = new Map();
@@ -301,6 +303,8 @@ function transform_fact_produccion(rawData) {
   );
   const viajes_map = new Map(viaje.map((v) => [v["Row ID"], v]));
   const obras_map = new Map(obra.map((o) => [o["Row ID"], o]));
+  const usuarios_map = new Map(usuario.map((u) => [u["Row ID"], u]));
+  const destinos_map = new Map(destino.map((d) => [d["Row ID"], d]));
 
   const precios_etiquetas_map = new Map();
   precio_etiqueta.forEach((p) => {
@@ -338,6 +342,22 @@ function transform_fact_produccion(rawData) {
                 new Date(h.vigente_desde).getTime() <=
                 new Date(r.hora_inicial).getTime()
             );
+
+          if (
+            !horario_obra ||
+            !horario_obra?.num_horas_lunes ||
+            !horario_obra?.num_horas_martes ||
+            !horario_obra?.num_horas_miercoles ||
+            !horario_obra?.num_horas_jueves ||
+            !horario_obra?.num_horas_viernes ||
+            !horario_obra?.num_horas_sabado ||
+            !horario_obra?.num_horas_festivas
+          ) {
+            console.log(
+              `❌ Horario incompleto en la obra: ${obra_record.nombre_obra}`
+            );
+          }
+
           const horas_obligatorias_semana = horario_obra
             ? [
                 0,
@@ -393,6 +413,7 @@ function transform_fact_produccion(rawData) {
 
       // procesar registros e incluir las extras calculadas en el punto anterior en cada registro
       for (const registro of registros) {
+        const operador_record = usuarios_map.get(registro.operador);
         const obra_record = obras_map.get(registro.id_obra);
 
         const horas_trabajadas_registro = registro.hora_final
@@ -411,6 +432,12 @@ function transform_fact_produccion(rawData) {
               new Date(s.vigente_desde).getTime() <=
               new Date(registro.hora_inicial).getTime()
           );
+
+        if (!salario_record) {
+          console.log(
+            `❌ No se encontró el salario del operador ${operador_record.nombre} en la obra ${obra_record.nombre_obra}`
+          );
+        }
 
         const porcentaje_a_cargar_de_extras =
           registro.hora_final && obra_record?.nombre_obra !== "COSTA RICA"
@@ -481,51 +508,17 @@ function transform_fact_produccion(rawData) {
             .map((id) => id.trim())
             .filter((id) => id) ?? [];
 
-        const info_precio_viaje = precios_etiquetas_map.get(
-          `${registro.id_obra}-${equipo_record?.id_etiqueta_equipo}-VIAJE`
-        );
-
         const info_precio_hora = precios_etiquetas_map.get(
           `${registro.id_obra}-${equipo_record?.id_etiqueta_equipo}-HORA`
         );
+
         const info_precio_dia = precios_etiquetas_map.get(
           `${registro.id_obra}-${equipo_record?.id_etiqueta_equipo}-DIA`
         );
 
-        // VIAJES
-        const info_viajes = related_viaje_ids?.reduce(
-          (acc, id) => {
-            const record_viaje = viajes_map.get(id);
-            if (!record_viaje) return acc;
-
-            const info_precio_destino =
-              info_precio_viaje?.get(record_viaje.id_destino) || [];
-
-            const info_precio_destino_por_fecha_descendiente = [
-              ...info_precio_destino,
-            ].sort(
-              (a, b) =>
-                new Date(b.historico_desde).getTime() -
-                new Date(a.historico_desde).getTime()
-            );
-
-            const precio_unitario_viaje =
-              info_precio_destino_por_fecha_descendiente?.find(
-                (p) =>
-                  new Date(p.historico_desde).getTime() <=
-                  new Date(registro.hora_inicial).getTime()
-              )?.precio || 0;
-
-            return {
-              valor_viajes:
-                acc.valor_viajes +
-                parseFloat(precio_unitario_viaje) *
-                  parseFloat(record_viaje.num_viajes),
-              num_viajes: acc.num_viajes + parseFloat(record_viaje.num_viajes),
-            };
-          },
-          { valor_viajes: 0, num_viajes: 0 }
-        ) || { valor_viajes: 0, num_viajes: 0 };
+        const info_precio_viaje = precios_etiquetas_map.get(
+          `${registro.id_obra}-${equipo_record?.id_etiqueta_equipo}-VIAJE`
+        );
 
         // HORA
         const info_precio_hora_por_fecha_descendiente = [
@@ -541,6 +534,12 @@ function transform_fact_produccion(rawData) {
               new Date(p.historico_desde).getTime() <=
               new Date(registro.hora_inicial).getTime()
           )?.precio || 0;
+
+        if (!precio_unitario_hora && tipo_activo === "EQUIPO") {
+          console.log(
+            `❌ No se encontró el precio de la hora en la obra ${obra_record.nombre_obra} para la etiqueta ${etiqueta_equipo_record.etiqueta}`
+          );
+        }
 
         const valor_activo_por_horas =
           parseFloat(precio_unitario_hora) *
@@ -561,7 +560,74 @@ function transform_fact_produccion(rawData) {
               new Date(registro.hora_inicial).getTime()
           )?.precio || 0;
 
+        if (
+          !precio_unitario_dia &&
+          (tipo_equipo === "CAMIONETA" || tipo_activo === "MARTILLO")
+        ) {
+          console.log(
+            `❌ No se encontró el precio del día en la obra ${obra_record.nombre_obra} para la etiqueta ${etiqueta_equipo_record.etiqueta}`
+          );
+        }
+
+        if (
+          !precio_unitario_dia &&
+          (tipo_equipo === "CAMION" || tipo_activo === "VOLQUETA") &&
+          !related_viaje_ids.length
+        ) {
+          console.log(
+            `❌ No se encontró el precio del día en la obra ${obra_record.nombre_obra} para la etiqueta ${etiqueta_equipo_record.etiqueta}`
+          );
+        }
+
         const valor_activo_por_dia = parseFloat(precio_unitario_dia) * 1;
+
+        // VIAJES
+        const info_viajes = related_viaje_ids?.reduce(
+          (acc, id) => {
+            const record_viaje = viajes_map.get(id);
+            if (!record_viaje) return acc;
+            const destino = destinos_map?.get(
+              record_viaje.id_destino
+            )?.nombre_destino;
+
+            const info_precio_destino =
+              info_precio_viaje?.get(record_viaje.id_destino) || [];
+
+            const info_precio_destino_por_fecha_descendiente = [
+              ...info_precio_destino,
+            ].sort(
+              (a, b) =>
+                new Date(b.historico_desde).getTime() -
+                new Date(a.historico_desde).getTime()
+            );
+
+            const precio_unitario_viaje =
+              info_precio_destino_por_fecha_descendiente?.find(
+                (p) =>
+                  new Date(p.historico_desde).getTime() <=
+                  new Date(registro.hora_inicial).getTime()
+              )?.precio || 0;
+
+            if (
+              !info_precio_dia &&
+              !precio_unitario_viaje &&
+              (tipo_equipo === "CAMION" || tipo_equipo === "VOLQUETA")
+            ) {
+              console.log(
+                `❌ No se encontró el precio del viaje en la obra ${obra_record.nombre_obra} para la etiqueta ${etiqueta_equipo_record.etiqueta} al destino ${destino}`
+              );
+            }
+
+            return {
+              valor_viajes:
+                acc.valor_viajes +
+                parseFloat(precio_unitario_viaje) *
+                  parseFloat(record_viaje.num_viajes),
+              num_viajes: acc.num_viajes + parseFloat(record_viaje.num_viajes),
+            };
+          },
+          { valor_viajes: 0, num_viajes: 0 }
+        ) || { valor_viajes: 0, num_viajes: 0 };
 
         const valor_activo =
           valor_activo_por_horas +
