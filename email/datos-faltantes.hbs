@@ -7,82 +7,114 @@
     <h2>Reporte de Datos Faltantes - ETL</h2>
 
     <p>
-      Se ha completado el proceso ETL del día <strong>{{date}}</strong>.
+      Se ha completado el proceso ETL del día
+      <strong>{{date}}</strong>.
       {{#if hasMissingData}}
-      Se detectaron los siguientes datos faltantes que requieren atención:
+        Se detectaron los siguientes datos faltantes que requieren atención:
       {{else}}
-      ✅ No se detectaron datos faltantes.
+        ✅ No se detectaron datos faltantes.
       {{/if}}
     </p>
 
     {{#if hasMissingData}}
-    {{#each obras}}
-    <div style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #ff9800;">
-      <h3 style="margin-top: 0;">🏗️ Obra: {{nombre}}</h3>
+      {{#each obras}}
+        <div
+          style="margin: 20px 0; padding: 15px; background-color: #f5f5f5; border-left: 4px solid #ff9800;"
+        >
+          <h3 style="margin-top: 0;">🏗️ Obra: {{nombre}}</h3>
 
-      {{#if horario.missing}}
-      <div style="margin: 10px 0;">
-        <strong>⏰ Horario:</strong> Datos de horario faltantes
-      </div>
-      {{/if}}
+          {{#if horario.missing}}
+            <div style="margin: 10px 0;">
+              <strong>⏰ Horario:</strong>
+              Datos de horario faltantes
+            </div>
+          {{/if}}
 
-      {{#if salario.length}}
-      <div style="margin: 10px 0;">
-        <strong>💰 Salario:</strong> Faltante para los siguientes operadores:
-        <ul style="margin: 5px 0;">
-          {{#each salario}}
-          <li>{{this}}</li>
-          {{/each}}
-        </ul>
-      </div>
-      {{/if}}
+          {{#if salario.length}}
+            <div style="margin: 10px 0;">
+              <strong>💰 Salario:</strong>
+              Faltante para los siguientes operadores:
+              <ul style="margin: 5px 0;">
+                {{#each salario}}
+                  <li>{{this}}</li>
+                {{/each}}
+              </ul>
+            </div>
+          {{/if}}
 
-      {{#if (or precioEquipo.hora.length precioEquipo.dia.length precioEquipo.viaje.length)}}
-      <div style="margin: 10px 0;">
-        <strong>💲 Precio Equipo:</strong>
+          {{#if
+            (or
+              precioEquipo.hora.length
+              precioEquipo.dia.length
+              precioEquipo.viaje.length
+            )
+          }}
+            <div style="margin: 10px 0;">
+              <strong>💲 Precio Equipo:</strong>
 
-        {{#if precioEquipo.hora.length}}
-        <div style="margin-left: 20px; margin-top: 5px;">
-          <strong>🕐 Por Hora:</strong> Faltante para las siguientes etiquetas:
-          <ul style="margin: 5px 0;">
-            {{#each precioEquipo.hora}}
-            <li>{{this}}</li>
-            {{/each}}
-          </ul>
+              {{#if precioEquipo.hora.length}}
+                <div style="margin-left: 20px; margin-top: 5px;">
+                  <strong>🕐 Por Hora:</strong>
+                  Faltante para las siguientes etiquetas:
+                  <ul style="margin: 5px 0;">
+                    {{#each precioEquipo.hora}}
+                      <li>{{this}}</li>
+                    {{/each}}
+                  </ul>
+                </div>
+              {{/if}}
+
+              {{#if precioEquipo.dia.length}}
+                <div style="margin-left: 20px; margin-top: 5px;">
+                  <strong>📅 Por Día:</strong>
+                  Faltante para las siguientes etiquetas:
+                  <ul style="margin: 5px 0;">
+                    {{#each precioEquipo.dia}}
+                      <li>{{this}}</li>
+                    {{/each}}
+                  </ul>
+                </div>
+              {{/if}}
+
+              {{#if precioEquipo.viaje.length}}
+                <div style="margin-left: 20px; margin-top: 5px;">
+                  <strong>🚛 Por Viaje:</strong>
+                  <ul style="margin: 5px 0;">
+                    {{#each precioEquipo.viaje}}
+                      <li><strong>{{destino}}:</strong> {{etiquetas}}</li>
+                    {{/each}}
+                  </ul>
+                </div>
+              {{/if}}
+            </div>
+          {{/if}}
+
+          {{#if sinHoraFinal.length}}
+            <div style="margin: 10px 0;">
+              <strong>⚠️ Registros Sin Hora Final:</strong>
+              <ul style="margin: 5px 0;">
+                {{#each sinHoraFinal}}
+                  <li>
+                    <strong>Fecha {{fecha}}:</strong>
+                    {{#each operadores}}{{this}}{{#unless @last}},
+                      {{/unless}}{{/each}}
+                  </li>
+                {{/each}}
+              </ul>
+            </div>
+          {{/if}}
         </div>
-        {{/if}}
+      {{/each}}
 
-        {{#if precioEquipo.dia.length}}
-        <div style="margin-left: 20px; margin-top: 5px;">
-          <strong>📅 Por Día:</strong> Faltante para las siguientes etiquetas:
-          <ul style="margin: 5px 0;">
-            {{#each precioEquipo.dia}}
-            <li>{{this}}</li>
-            {{/each}}
-          </ul>
-        </div>
-        {{/if}}
-
-        {{#if precioEquipo.viaje.length}}
-        <div style="margin-left: 20px; margin-top: 5px;">
-          <strong>🚛 Por Viaje:</strong>
-          <ul style="margin: 5px 0;">
-            {{#each precioEquipo.viaje}}
-            <li><strong>{{destino}}:</strong> {{etiquetas}}</li>
-            {{/each}}
-          </ul>
-        </div>
-        {{/if}}
+      <div
+        style="margin-top: 30px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107;"
+      >
+        <p style="margin: 0;">
+          <strong>⚠️ Acción requerida:</strong>
+          Por favor revisa y actualiza los datos faltantes en el sistema para
+          garantizar la precisión de los reportes.
+        </p>
       </div>
-      {{/if}}
-    </div>
-    {{/each}}
-
-    <div style="margin-top: 30px; padding: 15px; background-color: #fff3cd; border-left: 4px solid #ffc107;">
-      <p style="margin: 0;">
-        <strong>⚠️ Acción requerida:</strong> Por favor revisa y actualiza los datos faltantes en el sistema para garantizar la precisión de los reportes.
-      </p>
-    </div>
     {{/if}}
 
     <p style="margin-top: 2rem; color: #666;">

@@ -55,10 +55,38 @@ function transform_dim_equipo(equipos_arr, etiquetas_equipos_arr) {
   const etiquetas_equipos_map = new Map(
     etiquetas_equipos_arr.map((et) => [et["Row ID"], et])
   );
+
   if (!equipos_arr) return [];
   return equipos_arr.map((e) => {
     const etiqueta_equipo_record =
       etiquetas_equipos_map.get(e.id_etiqueta_equipo) || null;
+
+    let rendimientoCombustibleTeorico = 0;
+    if (
+      e.unidad_rendimiento_combustible_teorico === "KMPG" ||
+      e.unidad_rendimiento_combustible_teorico === "GPH"
+    ) {
+      rendimientoCombustibleTeorico = parseFloat(
+        e.rendimiento_combustible_teorico || 0
+      );
+    }
+
+    if (e.unidad_rendimiento_combustible_teorico === "LPH") {
+      rendimientoCombustibleTeorico = parseFloat(
+        (parseFloat(e.rendimiento_combustible_teorico || 0) * 0.264172).toFixed(
+          2
+        )
+      );
+    }
+
+    if (e.unidad_rendimiento_combustible_teorico === "KMPL") {
+      rendimientoCombustibleTeorico = parseFloat(
+        (parseFloat(e.rendimiento_combustible_teorico || 0) / 0.264172).toFixed(
+          2
+        )
+      );
+    }
+
     return {
       id_equipo: e["Row ID"],
       codigo_interno: e.codigo_interno ?? null,
@@ -66,6 +94,7 @@ function transform_dim_equipo(equipos_arr, etiquetas_equipos_arr) {
       tipo_equipo: e.tipo_equipo ?? etiqueta_equipo_record?.tipo_equipo ?? null,
       tipo_activo: e.tipo_activo ?? etiqueta_equipo_record?.tipo_activo ?? null,
       etiqueta_equipo: etiqueta_equipo_record?.etiqueta ?? null,
+      rendimiento_combustible_teorico: rendimientoCombustibleTeorico,
     };
   });
 }
@@ -142,8 +171,12 @@ function transform_fact_produccion(rawData) {
     destino,
   } = rawData;
 
+  const registros_con_hora_final = registro_actividad.filter(
+    (r) => r.hora_final
+  );
+
   const registro_actividad_map = new Map();
-  registro_actividad.forEach((r) => {
+  registros_con_hora_final.forEach((r) => {
     if (!registro_actividad_map.has(r.operador)) {
       registro_actividad_map.set(r.operador, new Map());
     }
@@ -232,6 +265,9 @@ function transform_fact_produccion(rawData) {
           viaje: new Map(),
           dia: [],
         },
+        sinHoraFinal: {
+          fecha: [],
+        },
       });
     }
 
@@ -261,19 +297,68 @@ function transform_fact_produccion(rawData) {
           obra_data.precioEquipo.dia.push(item_data);
         }
       }
+    } else if (category === "sinHoraFinal") {
+      const { fecha, operadores } = item_data;
+      const fecha_entry = obra_data.sinHoraFinal.fecha.find(
+        (entry) => entry.fecha === fecha
+      );
+      if (fecha_entry) {
+        fecha_entry.operadores.push(...operadores);
+      } else {
+        obra_data.sinHoraFinal.fecha.push({ fecha, operadores });
+      }
     }
   }
 
   const missing_data_tracker = new Map();
+
+  const registros_sin_hora_final = registro_actividad.filter(
+    (r) => !r.hora_final
+  );
+
+  const registros_sin_hora_final_por_obra = new Map();
+
+  registros_sin_hora_final.forEach((r) => {
+    const obra_record = obras_map.get(r.id_obra);
+    const operador_record = usuarios_map.get(r.operador);
+
+    if (!obra_record || !operador_record) return;
+
+    const fecha = formatDate(r.hora_inicial);
+    if (!fecha) return;
+
+    const obra_name = obra_record.nombre_obra;
+
+    if (!registros_sin_hora_final_por_obra.has(obra_name)) {
+      registros_sin_hora_final_por_obra.set(obra_name, new Map());
+    }
+
+    const fechas_map = registros_sin_hora_final_por_obra.get(obra_name);
+    if (!fechas_map.has(fecha)) {
+      fechas_map.set(fecha, []);
+    }
+
+    fechas_map.get(fecha).push(operador_record.usuario);
+  });
+
+  // Update missing data tracker with unfinished records
+  for (const [obra_name, fechas_map] of registros_sin_hora_final_por_obra) {
+    for (const [fecha, operadores] of fechas_map) {
+      updateMissingDataTracker(obra_name, "sinHoraFinal", null, {
+        fecha,
+        operadores,
+      });
+    }
+  }
 
   const fact_produccion = [];
   for (const [_, fechas_map] of registro_actividad_map) {
     for (const [_, registros] of fechas_map) {
       const registros_para_calcular_extras = [];
 
-      registros.forEach((r, index) => {
+      registros.forEach((r) => {
         const obra_record = obras_map.get(r.id_obra);
-        if (r.hora_final && obra_record?.nombre_obra !== "COSTA RICA") {
+        if (obra_record?.nombre_obra !== "COSTA RICA") {
           const horario_obra = horarios_obras_map
             .get(r.id_obra)
             ?.find(
@@ -322,9 +407,23 @@ function transform_fact_produccion(rawData) {
         }
       });
 
-      const total_horas_trabajadas_dia = registros.reduce((acc, r) => {
-        const obra_record = obras_map.get(r.id_obra);
-        if (r.hora_final && obra_record?.nombre_obra !== "COSTA RICA") {
+      const total_horas_trabajadas_dia_para_distribuir_extras =
+        registros.reduce((acc, r) => {
+          const obra_record = obras_map.get(r.id_obra);
+          if (r.hora_final && obra_record?.nombre_obra !== "COSTA RICA") {
+            const horas_trabajadas = calcularHorasTrabajadas(
+              formatDate(r.hora_inicial, true),
+              formatDate(r.hora_final, true),
+              formatDate(r.hora_inicial_receso, true),
+              formatDate(r.hora_final_receso, true)
+            );
+            return acc + horas_trabajadas;
+          }
+          return acc;
+        }, 0);
+
+      const total_horas_trabajadas_dia_para_distribuir_valor_activo_dia =
+        registros.reduce((acc, r) => {
           const horas_trabajadas = calcularHorasTrabajadas(
             formatDate(r.hora_inicial, true),
             formatDate(r.hora_final, true),
@@ -332,9 +431,7 @@ function transform_fact_produccion(rawData) {
             formatDate(r.hora_final_receso, true)
           );
           return acc + horas_trabajadas;
-        }
-        return acc;
-      }, 0);
+        }, 0);
 
       const extras = registros_para_calcular_extras.length
         ? calcularHorasExtras(registros_para_calcular_extras)
@@ -353,7 +450,7 @@ function transform_fact_produccion(rawData) {
         const operador_record = usuarios_map.get(registro.operador);
         const obra_record = obras_map.get(registro.id_obra);
 
-        const horas_trabajadas_registro = registro.hora_final
+        const horas_trabajadas_operador_en_registro = registro.hora_final
           ? calcularHorasTrabajadas(
               formatDate(registro.hora_inicial, true),
               formatDate(registro.hora_final, true),
@@ -370,7 +467,7 @@ function transform_fact_produccion(rawData) {
               new Date(registro.hora_inicial).getTime()
           );
 
-        if (!salario_record) {
+        if (!salario_record && obra_record.nombre_obra !== "COSTA RICA") {
           updateMissingDataTracker(
             obra_record.nombre_obra,
             "salario",
@@ -379,26 +476,33 @@ function transform_fact_produccion(rawData) {
           );
         }
 
-        const porcentaje_registro_en_dia = registro.hora_final
-          ? horas_trabajadas_registro / total_horas_trabajadas_dia
+        const porcentaje_registro_en_dia_para_extras = registro.hora_final
+          ? horas_trabajadas_operador_en_registro /
+            total_horas_trabajadas_dia_para_distribuir_extras
           : 0;
 
         const extras_registro = {
           heod: parseFloat(
-            (extras.heod * porcentaje_registro_en_dia).toFixed(2)
+            (extras.heod * porcentaje_registro_en_dia_para_extras).toFixed(2)
           ),
           heon: parseFloat(
-            (extras.heon * porcentaje_registro_en_dia).toFixed(2)
+            (extras.heon * porcentaje_registro_en_dia_para_extras).toFixed(2)
           ),
           hefd: parseFloat(
-            (extras.hefd * porcentaje_registro_en_dia).toFixed(2)
+            (extras.hefd * porcentaje_registro_en_dia_para_extras).toFixed(2)
           ),
           hefn: parseFloat(
-            (extras.hefn * porcentaje_registro_en_dia).toFixed(2)
+            (extras.hefn * porcentaje_registro_en_dia_para_extras).toFixed(2)
           ),
-          rno: parseFloat((extras.rno * porcentaje_registro_en_dia).toFixed(2)),
-          rnf: parseFloat((extras.rnf * porcentaje_registro_en_dia).toFixed(2)),
-          hf: parseFloat((extras.hf * porcentaje_registro_en_dia).toFixed(2)),
+          rno: parseFloat(
+            (extras.rno * porcentaje_registro_en_dia_para_extras).toFixed(2)
+          ),
+          rnf: parseFloat(
+            (extras.rnf * porcentaje_registro_en_dia_para_extras).toFixed(2)
+          ),
+          hf: parseFloat(
+            (extras.hf * porcentaje_registro_en_dia_para_extras).toFixed(2)
+          ),
         };
 
         const concepto_extra_aplicable = conceptos_extras.find(
@@ -523,12 +627,18 @@ function transform_fact_produccion(rawData) {
 
         const horas_varado = parseFloat(registro.horas_varado || 0);
         const porcentaje_no_varado_equipo_registro_para_cobros_por_dia =
-          (horas_trabajadas_registro - horas_varado) /
-          horas_trabajadas_registro;
+          Math.max(horas_trabajadas_operador_en_registro - horas_varado, 0) /
+          horas_trabajadas_operador_en_registro;
+
+        const porcentaje_registro_en_dia_para_activo_por_dia =
+          registro.hora_final
+            ? horas_trabajadas_operador_en_registro /
+              total_horas_trabajadas_dia_para_distribuir_valor_activo_dia
+            : 0;
 
         const valor_activo_por_dia = parseFloat(
           precio_unitario_dia *
-            porcentaje_registro_en_dia *
+            porcentaje_registro_en_dia_para_activo_por_dia *
             porcentaje_no_varado_equipo_registro_para_cobros_por_dia
         );
 
@@ -589,6 +699,21 @@ function transform_fact_produccion(rawData) {
           valor_activo_por_dia +
           info_viajes.valor_viajes;
 
+        // if (equipo_record.codigo_interno === "YDN-CM-07") {
+        //   console.log("-------------");
+        //   console.log("id_registro", registro["Row ID"]);
+        //   console.log("valor_activo_por_dia", valor_activo_por_dia);
+        //   console.log(
+        //     "horas_trabajadas_registro",
+        //     horas_trabajadas_operador_en_registro
+        //   );
+        //   console.log("porcentaje_registro_en_dia", porcentaje_registro_en_dia);
+        //   console.log(
+        //     "porcentaje_no_varado_equipo_registro_para_cobros_por_dia",
+        //     porcentaje_no_varado_equipo_registro_para_cobros_por_dia
+        //   );
+        // }
+
         fact_produccion.push({
           id_registro: registro["Row ID"] ?? null,
           id_equipo: registro.id_equipo ?? null,
@@ -608,7 +733,7 @@ function transform_fact_produccion(rawData) {
             registro.kilometros_recorridos || 0
           ),
           horas_trabajadas_operador: parseFloat(
-            horas_trabajadas_registro.toFixed(2)
+            horas_trabajadas_operador_en_registro.toFixed(2)
           ),
           combustible:
             registro.unidad_de_medida === "Galones"
@@ -631,6 +756,81 @@ function transform_fact_produccion(rawData) {
           valor_activo: valor_activo,
           num_viajes: info_viajes.num_viajes,
         });
+
+        if (registro.id_accesorio) {
+          const accesorio_record = equipos_map.get(registro.id_accesorio);
+          const etiqueta_acesorio_record =
+            etiquetas_equipos_map.get(accesorio_record?.id_etiqueta_equipo) ||
+            null;
+          const info_precio_dia_accesorio = precios_etiquetas_map.get(
+            `${registro.id_obra}-${accesorio_record?.id_etiqueta_equipo}-DIA`
+          );
+
+          // DIA
+          const info_precio_dia_accesorio_por_fecha_descendiente = [
+            ...(info_precio_dia_accesorio || []),
+          ].sort(
+            (a, b) =>
+              new Date(b.historico_desde).getTime() -
+              new Date(a.historico_desde).getTime()
+          );
+          const precio_unitario_dia_accesorio =
+            info_precio_dia_accesorio_por_fecha_descendiente?.find(
+              (p) =>
+                new Date(p.historico_desde).getTime() <=
+                new Date(registro.hora_inicial).getTime()
+            )?.precio || 0;
+
+          if (!precio_unitario_dia_accesorio) {
+            updateMissingDataTracker(
+              obra_record.nombre_obra,
+              "precioEquipo",
+              "dia",
+              etiqueta_acesorio_record.etiqueta
+            );
+          }
+
+          const porcentaje_no_varado_equipo_registro_para_cobros_por_dia =
+            Math.max(horas_trabajadas_operador_en_registro - horas_varado, 0) /
+            horas_trabajadas_operador_en_registro;
+
+          const valor_activo_por_dia_accesorio = parseFloat(
+            precio_unitario_dia_accesorio *
+              porcentaje_registro_en_dia_para_activo_por_dia *
+              porcentaje_no_varado_equipo_registro_para_cobros_por_dia
+          );
+
+          fact_produccion.push({
+            id_registro: registro["Row ID"] ?? null,
+            id_equipo: registro.id_accesorio ?? null,
+            id_operador: registro.operador ?? null,
+            id_responsable_de_obra: registro.responsable_de_obra ?? null,
+            id_obra: registro.id_obra ?? null,
+            id_fecha: registro.hora_inicial
+              ? formatDate(registro.hora_inicial)
+              : null,
+            estado: registro.estado ?? null,
+            estado_aprobacion: registro.estado_aprobacion ?? null,
+            varado: registro.varado === "Y" ? "Sí" : "No",
+            horas_trabajadas_equipo: parseFloat(
+              registro.horas_trabajadas_accesorio || 0
+            ),
+            kilometros_recorridos: 0,
+            horas_trabajadas_operador: 0,
+            combustible: 0,
+            horas_varado: 0,
+            heod: 0,
+            heon: 0,
+            hefd: 0,
+            hefn: 0,
+            rno: 0,
+            rnf: 0,
+            hf: 0,
+            valor_extras_y_recargos: 0,
+            valor_activo: valor_activo_por_dia_accesorio,
+            num_viajes: 0,
+          });
+        }
       }
     }
   }

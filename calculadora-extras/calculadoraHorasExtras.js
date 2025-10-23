@@ -21,15 +21,6 @@ export function calcularHorasExtras(registros) {
       "registros rowId",
       registros.map((r) => r.rowId)
     );
-    return {
-      heod: 0,
-      heon: 0,
-      hefd: 0,
-      hefn: 0,
-      rno: 0,
-      rnf: 0,
-      hf: 0,
-    };
     throw new Error(especificacionRangosNoSuperpuestos.obtenerMensajeError());
   }
 
@@ -42,10 +33,8 @@ export function calcularHorasExtras(registros) {
       horaInicio,
       horaFin,
       horasObligatoriasSemana,
-      horasMaximasFestivas,
       horaInicioDescanso,
       horaFinDescanso,
-      horasTrabajadas,
     } = registro;
 
     const [fechaInicio, fechaFin, fechaInicioDescanso, fechaFinDescanso] =

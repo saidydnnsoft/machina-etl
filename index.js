@@ -31,7 +31,10 @@ functions.http("runEtl", async (req, res) => {
     }
 
     // Send missing data email if there are any missing data
-    if (transformedData.missing_data_tracker && transformedData.missing_data_tracker.size > 0) {
+    if (
+      transformedData.missing_data_tracker &&
+      transformedData.missing_data_tracker.size > 0
+    ) {
       try {
         const transporter = nodemailer.createTransport({
           host: process.env.EMAIL_HOST,
@@ -42,14 +45,20 @@ functions.http("runEtl", async (req, res) => {
           },
         });
 
-        await sendMissingDataEmail(transformedData.missing_data_tracker, transporter);
+        await sendMissingDataEmail(
+          transformedData.missing_data_tracker,
+          transporter
+        );
       } catch (emailError) {
-        console.error("⚠️ Failed to send missing data email:", emailError.message);
+        console.error(
+          "⚠️ Failed to send missing data email:",
+          emailError.message
+        );
         // Don't fail the entire ETL if email fails
       }
     }
 
-    // await load(transformedData);
+    await load(transformedData);
     res.send("✅ ETL complete!");
   } catch (error) {
     console.error("❌ ETL failed:", error.message);

@@ -47,7 +47,8 @@ export async function sendMissingDataEmail(missingDataTracker, transporter) {
       missing_data.salario.length > 0 ||
       missing_data.precioEquipo.hora.length > 0 ||
       missing_data.precioEquipo.dia.length > 0 ||
-      viajesArray.length > 0;
+      viajesArray.length > 0 ||
+      missing_data.sinHoraFinal.fecha.length > 0;
 
     if (hasMissingData) {
       obras.push({
@@ -59,6 +60,7 @@ export async function sendMissingDataEmail(missingDataTracker, transporter) {
           dia: missing_data.precioEquipo.dia,
           viaje: viajesArray,
         },
+        sinHoraFinal: missing_data.sinHoraFinal.fecha,
       });
     }
   }
