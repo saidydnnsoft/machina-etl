@@ -11,6 +11,7 @@ import { transform } from "./etl/transform.js";
 import { load } from "./etl/load.js";
 import nodemailer from "nodemailer";
 import { sendMissingDataEmail } from "./email/email.js";
+import { sendMonthlyReportEmail } from "./email/extrasReport.js";
 
 // --- Main HTTP Function ---
 functions.http("runEtl", async (req, res) => {
@@ -30,8 +31,15 @@ functions.http("runEtl", async (req, res) => {
       }
     }
 
-    // Send missing data email if there are any missing data
+    // Send missing data email if there are any missing data (only on Wednesdays)
+    const now = new Date();
+    const bogotaTime = new Date(
+      now.toLocaleString("en-US", { timeZone: "America/Bogota" }),
+    );
+    const dayOfWeek = bogotaTime.getDay(); // 0 = Sunday, 3 = Wednesday
+
     if (
+      dayOfWeek === 3 &&
       transformedData.missing_data_tracker &&
       transformedData.missing_data_tracker.size > 0
     ) {
@@ -47,12 +55,37 @@ functions.http("runEtl", async (req, res) => {
 
         await sendMissingDataEmail(
           transformedData.missing_data_tracker,
-          transporter
+          transporter,
         );
       } catch (emailError) {
         console.error(
           "⚠️ Failed to send missing data email:",
-          emailError.message
+          emailError.message,
+        );
+        // Don't fail the entire ETL if email fails
+      }
+    }
+
+    // Send monthly report email on day 10 or 25 of each month
+    const dayOfMonth = bogotaTime.getDate();
+
+    if (dayOfMonth === 10 || dayOfMonth === 25) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.EMAIL_HOST,
+          port: Number(process.env.EMAIL_PORT),
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASSWORD,
+          },
+        });
+
+        await sendMonthlyReportEmail(transformedData, rawTables, transporter);
+        console.log("✅ Monthly report email sent successfully");
+      } catch (emailError) {
+        console.error(
+          "⚠️ Failed to send monthly report email:",
+          emailError.message,
         );
         // Don't fail the entire ETL if email fails
       }
@@ -66,8 +99,8 @@ functions.http("runEtl", async (req, res) => {
     if (error.errors) {
       error.errors.forEach((err) =>
         console.error(
-          `BQ Error: ${err.message}, Reason: ${err.reason}, Location: ${err.location}`
-        )
+          `BQ Error: ${err.message}, Reason: ${err.reason}, Location: ${err.location}`,
+        ),
       );
     }
     res.status(500).send(`ETL failed: ${error.message}`);
