@@ -19,7 +19,7 @@ export function calcularHorasExtras(registros) {
   if (!especificacionRangosNoSuperpuestos.cumpleCon(registros)) {
     console.log(
       "registros rowId",
-      registros.map((r) => r.rowId)
+      registros.map((r) => r.rowId),
     );
     throw new Error(especificacionRangosNoSuperpuestos.obtenerMensajeError());
   }
@@ -46,7 +46,7 @@ export function calcularHorasExtras(registros) {
         horaInicio,
         horaFin,
         horaInicioDescanso,
-        horaFinDescanso
+        horaFinDescanso,
       ),
       fechaInicio,
       fechaFin,
@@ -130,7 +130,7 @@ export function calcularHorasExtras(registros) {
         fechaFin,
         fechaInicioDescanso,
         fechaFinDescanso,
-        fechasFestivas
+        fechasFestivas,
       );
     rangosHorarios.push(...rangosHorariosRegistro);
   }
@@ -151,10 +151,10 @@ export function calcularHorasExtras(registros) {
 
   // La regla la pone la obra en donde se trabajó mas horas. En caso de empate, se toma el último registro (registro en el que terminó la jornada)
   const maxHorasTrabajadas = Math.max(
-    ...registrosAumentados.map((r) => r.horasTrabajadas)
+    ...registrosAumentados.map((r) => r.horasTrabajadas),
   );
   const indiceRegistroConMasHorasTrabajadas = registrosAumentados.findLastIndex(
-    (registro) => registro.horasTrabajadas === maxHorasTrabajadas
+    (registro) => registro.horasTrabajadas === maxHorasTrabajadas,
   );
   const horasObligatoriasDia =
     registrosAumentados[indiceRegistroConMasHorasTrabajadas]
@@ -193,7 +193,9 @@ export function calcularHorasExtras(registros) {
 
     // Recargos nocturnos festivos
     if (rango.rango === "Nocturno" && rango.esFestivo && !inicioEsFestivo) {
-      extras.rnf += recargosPorProcesarRango;
+      // extras.rnf += recargosPorProcesarRango;
+      extras.rno += recargosPorProcesarRango;
+      extras.hf += recargosPorProcesarRango;
     }
 
     // Horas extra diurnas

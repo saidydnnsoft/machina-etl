@@ -1,7 +1,10 @@
 import ExcelJS from "exceljs";
 import { getBogotaDateString } from "./utils.js";
+import {
+  CONCEPTOS_BITAKORA,
+} from "../calculadora-extras/bitakora.js";
 
-async function updateRegistrosProcesadoRRHH(registroIds) {
+async function updateRegistrosProcesadoRRHH(registroIds, maxRetries = 3) {
   const appId = process.env.APP_ID;
   const appKey = process.env.APP_KEY;
 
@@ -14,35 +17,70 @@ async function updateRegistrosProcesadoRRHH(registroIds) {
 
   const url = `https://www.appsheet.com/api/v2/apps/${appId}/tables/registro_actividad/Action`;
 
-  // Update records in batches
+  const failedUpdates = [];
+
+  // Update records with retry logic
   for (const registroId of registroIds) {
-    try {
-      await fetch(url, {
-        method: "POST",
-        headers: {
-          ApplicationAccessKey: appKey,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          Action: "Edit",
-          Properties: {
-            Locale: "en-US",
+    let success = false;
+    let lastError = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            ApplicationAccessKey: appKey,
+            "Content-Type": "application/json",
           },
-          Rows: [
-            {
-              "Row ID": registroId,
-              procesado_rrhh: "Y",
+          body: JSON.stringify({
+            Action: "Edit",
+            Properties: {
+              Locale: "en-US",
             },
-          ],
-        }),
-      });
-      console.log(`✅ Updated procesado_rrhh for registro ${registroId}`);
-    } catch (error) {
-      console.error(
-        `❌ Failed to update registro ${registroId}:`,
-        error.message,
-      );
+            Rows: [
+              {
+                "Row ID": registroId,
+                procesado_rrhh: "Y",
+              },
+            ],
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+        }
+
+        console.log(`✅ Updated procesado_rrhh for registro ${registroId}`);
+        success = true;
+        break;
+      } catch (error) {
+        lastError = error;
+        console.warn(
+          `⚠️ Attempt ${attempt}/${maxRetries} failed for registro ${registroId}: ${error.message}`,
+        );
+
+        if (attempt < maxRetries) {
+          // Wait before retrying (exponential backoff)
+          const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+          console.log(`⏳ Waiting ${waitTime}ms before retry...`);
+          await new Promise((resolve) => setTimeout(resolve, waitTime));
+        }
+      }
     }
+
+    if (!success) {
+      console.error(
+        `❌ Failed to update registro ${registroId} after ${maxRetries} attempts:`,
+        lastError.message,
+      );
+      failedUpdates.push(registroId);
+    }
+  }
+
+  if (failedUpdates.length > 0) {
+    throw new Error(
+      `Failed to update ${failedUpdates.length} records: ${failedUpdates.join(", ")}`,
+    );
   }
 }
 
@@ -84,10 +122,22 @@ export async function generateMonthlyReportExcel(
   const worksheet = workbook.addWorksheet("Reporte Quincenal");
 
   // Create maps for lookups
-  const obraMap = new Map(dimObra.map((o) => [o.id_obra, o.nombre_obra]));
-  // Use raw usuario table to get nombre field
+  const obraMap = new Map(
+    rawTables.obra.map((o) => [
+      o["Row ID"],
+      { nombre: o.nombre_obra, ciudad: o.ciudad || "" },
+    ]),
+  );
+  // Use raw usuario table to get nombre, apellido, and identificacion fields
   const usuarioMap = new Map(
-    rawTables.usuario.map((u) => [u["Row ID"], u.nombre || u.usuario]),
+    rawTables.usuario.map((u) => [
+      u["Row ID"],
+      {
+        nombre: u.nombre || u.usuario,
+        apellido: u.apellido || "",
+        identificacion: u.identificacion || "",
+      },
+    ]),
   );
   const registroMap = new Map(
     rawTables.registro_actividad.map((r) => [r["Row ID"], r]),
@@ -96,7 +146,10 @@ export async function generateMonthlyReportExcel(
   // Define columns
   worksheet.columns = [
     { header: "Obra", key: "obra", width: 20 },
-    { header: "Operador", key: "operador", width: 20 },
+    { header: "Ciudad", key: "ciudad", width: 15 },
+    { header: "Nombre", key: "nombre", width: 20 },
+    { header: "Apellido", key: "apellido", width: 20 },
+    { header: "Identificación", key: "identificacion", width: 15 },
     { header: "Estado", key: "estado", width: 15 },
     {
       header: "Horas Trabajadas Operador",
@@ -124,40 +177,52 @@ export async function generateMonthlyReportExcel(
     fgColor: { argb: "FFD9D9D9" },
   };
 
-  // Add data rows
-  reportData.forEach((record) => {
-    const registro = registroMap.get(record.id_registro);
+  // Parse date strings to Excel date format (MM/DD/YYYY HH:MM:SS to Date object)
+  // Use UTC to avoid timezone shifts (same approach as calculadora-extras)
+  const parseDate = (dateStr) => {
+    if (!dateStr) return "";
+    try {
+      // Format: "10/08/2025 07:30:00" or "3/2/26 7:00:00"
+      const [datePart, timePart] = dateStr.split(" ");
+      const [month, day, yearStr] = datePart.split("/").map(Number);
+      const [hours, minutes, seconds] = timePart
+        ? timePart.split(":").map(Number)
+        : [0, 0, 0];
 
-    // Parse date strings to Excel date format (MM/DD/YYYY HH:MM:SS to Date object)
-    // Use UTC to avoid timezone shifts (same approach as calculadora-extras)
-    const parseDate = (dateStr) => {
-      if (!dateStr) return "";
-      try {
-        // Format: "10/08/2025 07:30:00" or "3/2/26 7:00:00"
-        const [datePart, timePart] = dateStr.split(" ");
-        const [month, day, yearStr] = datePart.split("/").map(Number);
-        const [hours, minutes, seconds] = timePart
-          ? timePart.split(":").map(Number)
-          : [0, 0, 0];
-
-        // Handle 2-digit year
-        let year = yearStr;
-        if (year < 100) {
-          year += 2000;
-        }
-
-        // Use Date.UTC to avoid timezone conversion
-        return new Date(
-          Date.UTC(year, month - 1, day, hours, minutes, seconds || 0),
-        );
-      } catch (e) {
-        return dateStr; // Return original if parsing fails
+      // Handle 2-digit year
+      let year = yearStr;
+      if (year < 100) {
+        year += 2000;
       }
+
+      // Use Date.UTC to avoid timezone conversion
+      return new Date(
+        Date.UTC(year, month - 1, day, hours, minutes, seconds || 0),
+      );
+    } catch (e) {
+      return dateStr; // Return original if parsing fails
+    }
+  };
+
+  // Add data rows and collect them for sorting
+  const rows = reportData.map((record) => {
+    const registro = registroMap.get(record.id_registro);
+    const obra = obraMap.get(record.id_obra) || {
+      nombre: record.id_obra,
+      ciudad: "",
+    };
+    const usuario = usuarioMap.get(record.id_operador) || {
+      nombre: record.id_operador,
+      apellido: "",
+      identificacion: "",
     };
 
-    worksheet.addRow({
-      obra: obraMap.get(record.id_obra) || record.id_obra,
-      operador: usuarioMap.get(record.id_operador) || record.id_operador,
+    return {
+      obra: obra.nombre,
+      ciudad: obra.ciudad,
+      nombre: usuario.nombre,
+      apellido: usuario.apellido,
+      identificacion: usuario.identificacion,
       estado: registro?.estado || "",
       horas_trabajadas_operador: registro?.horas_trabajadas_operador || 0,
       heod: record.heod,
@@ -171,14 +236,224 @@ export async function generateMonthlyReportExcel(
       hora_final: parseDate(registro?.hora_final),
       hora_inicio_descanso: parseDate(registro?.hora_inicial_receso),
       hora_fin_descanso: parseDate(registro?.hora_final_receso),
-    });
+    };
   });
 
-  // Format date columns (only time columns, not HF which is column K)
-  const dateColumns = ["L", "M", "N", "O"]; // Hora Inicial, Hora Final, Hora Inicio Descanso, Hora Fin Descanso
+  // Sort by apellido ascending, then by obra
+  rows.sort((a, b) => {
+    const apellidoCompare = a.apellido.localeCompare(b.apellido);
+    if (apellidoCompare !== 0) return apellidoCompare;
+    return a.obra.localeCompare(b.obra);
+  });
+
+  // Add sorted rows to worksheet
+  rows.forEach((row) => worksheet.addRow(row));
+
+  // Format date columns (only time columns, not HF which is column N)
+  const dateColumns = ["O", "P", "Q", "R"]; // Hora Inicial, Hora Final, Hora Inicio Descanso, Hora Fin Descanso
   dateColumns.forEach((col) => {
     worksheet.getColumn(col).numFmt = "mm/dd/yyyy hh:mm:ss";
   });
+
+  // Create sheets per ciudad with summed data by employee
+  const ciudadGroups = {};
+  rows.forEach((row) => {
+    const ciudad = row.ciudad || "Sin Ciudad";
+    if (!ciudadGroups[ciudad]) {
+      ciudadGroups[ciudad] = {};
+    }
+
+    const employeeKey = `${row.identificacion}|${row.nombre}|${row.apellido}`;
+    if (!ciudadGroups[ciudad][employeeKey]) {
+      ciudadGroups[ciudad][employeeKey] = {
+        nombre: row.nombre,
+        apellido: row.apellido,
+        identificacion: row.identificacion,
+        heod: 0,
+        heon: 0,
+        hefd: 0,
+        hefn: 0,
+        rno: 0,
+        rnf: 0,
+        hf: 0,
+      };
+    }
+
+    // Sum the values
+    ciudadGroups[ciudad][employeeKey].heod += row.heod || 0;
+    ciudadGroups[ciudad][employeeKey].heon += row.heon || 0;
+    ciudadGroups[ciudad][employeeKey].hefd += row.hefd || 0;
+    ciudadGroups[ciudad][employeeKey].hefn += row.hefn || 0;
+    ciudadGroups[ciudad][employeeKey].rno += row.rno || 0;
+    ciudadGroups[ciudad][employeeKey].rnf += row.rnf || 0;
+    ciudadGroups[ciudad][employeeKey].hf += row.hf || 0;
+  });
+
+  // Create a sheet for each ciudad
+  Object.keys(ciudadGroups)
+    .sort()
+    .forEach((ciudad) => {
+      const ciudadWorksheet = workbook.addWorksheet(ciudad);
+
+      // Define columns for ciudad sheet
+      ciudadWorksheet.columns = [
+        { header: "Nombre", key: "nombre", width: 20 },
+        { header: "Apellido", key: "apellido", width: 20 },
+        { header: "Identificación", key: "identificacion", width: 15 },
+        { header: "HEOD", key: "heod", width: 10 },
+        { header: "HEON", key: "heon", width: 10 },
+        { header: "HEFD", key: "hefd", width: 10 },
+        { header: "HEFN", key: "hefn", width: 10 },
+        { header: "RNO", key: "rno", width: 10 },
+        { header: "RNF", key: "rnf", width: 10 },
+        { header: "HF", key: "hf", width: 10 },
+      ];
+
+      // Style header row
+      ciudadWorksheet.getRow(1).font = { bold: true };
+      ciudadWorksheet.getRow(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: "FFD9D9D9" },
+      };
+
+      // Get employee data, sort by apellido, and add to worksheet
+      const employeeRows = Object.values(ciudadGroups[ciudad]);
+      employeeRows.sort((a, b) => a.apellido.localeCompare(b.apellido));
+      employeeRows.forEach((empRow) => ciudadWorksheet.addRow(empRow));
+    });
+
+  // Generate buffer
+  const buffer = await workbook.xlsx.writeBuffer();
+  return buffer;
+}
+
+export async function generateBitakoraExcel(reportData, rawTables, rangeEnd) {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Bitakora");
+
+  // Create maps for lookups
+  const obraMap = new Map(
+    rawTables.obra.map((o) => [
+      o["Row ID"],
+      { nombre: o.nombre_obra, ciudad: o.ciudad || "" },
+    ]),
+  );
+  const usuarioMap = new Map(
+    rawTables.usuario.map((u) => [
+      u["Row ID"],
+      {
+        identificacion: u.identificacion || "",
+      },
+    ]),
+  );
+
+  // Define columns based on COLUMNAS_BITAKORA
+  worksheet.columns = [
+    { header: "Identificacion", key: "identificacion", width: 15 },
+    { header: "Fecha", key: "fecha", width: 15 },
+    { header: "IdItem", key: "idItem", width: 15 },
+    { header: "Horas", key: "horas", width: 10 },
+    { header: "HoraInicial", key: "horaInicial", width: 15 },
+    { header: "IdCentroCosto", key: "idCentroCosto", width: 15 },
+    { header: "IdFondo", key: "idFondo", width: 15 },
+    { header: "PlanCuentaContable", key: "planCuentaContable", width: 20 },
+    { header: "Observacion", key: "observacion", width: 30 },
+    { header: "Descontar en prima", key: "descontarEnPrima", width: 15 },
+    { header: "Item", key: "item", width: 30 },
+    { header: "CentroCosto", key: "centroCosto", width: 15 },
+    { header: "Fondo", key: "fondo", width: 15 },
+  ];
+
+  // Style header row
+  worksheet.getRow(1).font = { bold: true };
+  worksheet.getRow(1).fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FFD9D9D9" },
+  };
+
+  // Format rangeEnd as dd/mm/yyyy
+  const formatDate = (date) => {
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const year = date.getFullYear();
+    return `${day}/${month}/${year}`;
+  };
+  const fechaFormatted = formatDate(rangeEnd);
+
+  // Group data by empleado, ciudad - sum hours for each concepto
+  const employeeCiudadData = {};
+
+  reportData.forEach((record) => {
+    const usuario = usuarioMap.get(record.id_operador);
+    const obra = obraMap.get(record.id_obra);
+    const identificacion = usuario?.identificacion || "";
+    const ciudad = obra?.ciudad || "";
+
+    const key = `${identificacion}|${ciudad}`;
+
+    if (!employeeCiudadData[key]) {
+      employeeCiudadData[key] = {
+        identificacion,
+        ciudad,
+        conceptos: {
+          heod: 0,
+          heon: 0,
+          hefd: 0,
+          hefn: 0,
+          rno: 0,
+          rnf: 0,
+          hf: 0,
+        },
+      };
+    }
+
+    // Sum hours for each concepto
+    employeeCiudadData[key].conceptos.heod += record.heod || 0;
+    employeeCiudadData[key].conceptos.heon += record.heon || 0;
+    employeeCiudadData[key].conceptos.hefd += record.hefd || 0;
+    employeeCiudadData[key].conceptos.hefn += record.hefn || 0;
+    employeeCiudadData[key].conceptos.rno += record.rno || 0;
+    employeeCiudadData[key].conceptos.rnf += record.rnf || 0;
+    employeeCiudadData[key].conceptos.hf += record.hf || 0;
+  });
+
+  // Generate rows for each empleado+ciudad combination and concepto
+  const rows = [];
+  Object.values(employeeCiudadData).forEach((employeeCiudad) => {
+    // For each concepto type, create a row if hours > 0
+    Object.entries(employeeCiudad.conceptos).forEach(([conceptoKey, horas]) => {
+      if (horas > 0) {
+        const conceptoInfo = CONCEPTOS_BITAKORA[conceptoKey];
+        rows.push({
+          identificacion: employeeCiudad.identificacion,
+          fecha: fechaFormatted,
+          idItem: conceptoInfo.idItem,
+          horas: horas,
+          horaInicial: "",
+          idCentroCosto: "",
+          idFondo: "",
+          planCuentaContable: "",
+          observacion: employeeCiudad.ciudad,
+          descontarEnPrima: "",
+          item: conceptoInfo.item,
+          centroCosto: "",
+          fondo: "",
+        });
+      }
+    });
+  });
+
+  // Sort rows by identificacion, then by ciudad
+  rows.sort((a, b) => {
+    const idCompare = a.identificacion.localeCompare(b.identificacion);
+    if (idCompare !== 0) return idCompare;
+    return a.observacion.localeCompare(b.observacion);
+  });
+
+  // Add rows to worksheet
+  rows.forEach((row) => worksheet.addRow(row));
 
   // Generate buffer
   const buffer = await workbook.xlsx.writeBuffer();
@@ -275,6 +550,12 @@ export async function sendMonthlyReportEmail(
     transformedData.dim_usuario,
   );
 
+  const bitakoraBuffer = await generateBitakoraExcel(
+    reportData,
+    rawTables,
+    rangeEnd,
+  );
+
   const recipients = process.env.EXTRAS_EMAIL_TO?.split(",")
     .map((email) => email.trim())
     .join(", ");
@@ -296,20 +577,10 @@ export async function sendMonthlyReportEmail(
       <div style="font-family: Arial, sans-serif; padding: 20px;">
         <h2>Reporte Quincenal de Horas Extras</h2>
         <p>Adjunto encontrará el reporte quincenal de horas extras correspondiente al día ${currentDate}.</p>
-        <p>El reporte incluye la siguiente información:</p>
+        <p>Se incluyen dos archivos:</p>
         <ul>
-          <li>Obra</li>
-          <li>Operador</li>
-          <li>Estado</li>
-          <li>Horas Trabajadas Operador</li>
-          <li>Horas Extra Ordinarias Diurnas (HEOD)</li>
-          <li>Horas Extra Ordinarias Nocturnas (HEON)</li>
-          <li>Horas Extra Festivas Diurnas (HEFD)</li>
-          <li>Horas Extra Festivas Nocturnas (HEFN)</li>
-          <li>Recargo Nocturno Ordinario (RNO)</li>
-          <li>Recargo Nocturno Festivo (RNF)</li>
-          <li>Horas Festivas (HF)</li>
-          <li>Horarios de trabajo y descanso</li>
+          <li><strong>Reporte Quincenal:</strong> Detalle completo de horas extras por empleado y obra</li>
+          <li><strong>Bitakora:</strong> Formato para carga en sistema de nómina</li>
         </ul>
       </div>
     `,
@@ -318,16 +589,30 @@ export async function sendMonthlyReportEmail(
         filename: `reporte-quincenal-${getBogotaDateString("yyyy-MM-dd")}.xlsx`,
         content: excelBuffer,
       },
+      {
+        filename: `bitakora-${getBogotaDateString("yyyy-MM-dd")}.xlsx`,
+        content: bitakoraBuffer,
+      },
     ],
   });
 
   console.log(`📧 Monthly report email sent to: ${recipients}`);
 
-  // Update procesado_rrhh to Y for all processed records
+  // Update procesado_rrhh to Y for all processed records (AFTER email is sent)
   const registroIds = reportData.map((record) => record.id_registro);
   console.log(
     `📝 Updating procesado_rrhh for ${registroIds.length} records...`,
   );
-  await updateRegistrosProcesadoRRHH(registroIds);
-  console.log(`✅ All records updated in AppSheet`);
+  try {
+    await updateRegistrosProcesadoRRHH(registroIds);
+    console.log(`✅ All ${registroIds.length} records updated in AppSheet`);
+  } catch (error) {
+    // Log error but DON'T throw - email was already sent successfully
+    console.error(
+      `❌ Failed to update records after all retries: ${error.message}`,
+    );
+    console.error(
+      `⚠️ Email was sent but ${registroIds.length} records were NOT marked as processed`,
+    );
+  }
 }

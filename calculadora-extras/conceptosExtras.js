@@ -6,7 +6,7 @@ export const CONCEPTOS_EXTRAS = [
     hefd: 1,
     hefn: 1.5,
     rno: 0.35,
-    rnf: 1.1,
+    rnf: 1.35,
     hf: 1,
   },
   {
@@ -16,7 +16,7 @@ export const CONCEPTOS_EXTRAS = [
     hefd: 1,
     hefn: 1.5,
     rno: 0.35,
-    rnf: 1.1,
+    rnf: 1.25,
     hf: 0.9,
   },
   {
@@ -26,7 +26,7 @@ export const CONCEPTOS_EXTRAS = [
     hefd: 1,
     hefn: 1.5,
     rno: 0.35,
-    rnf: 1.1,
+    rnf: 1.15,
     hf: 0.8,
   },
   {
