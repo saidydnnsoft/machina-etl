@@ -104,6 +104,5 @@ functions.http("runEtl", async (req, res) => {
       );
     }
     res.status(500).send(`ETL failed: ${error.message}`);
-    // comment
   }
 });
