@@ -10,16 +10,13 @@ async function updateRegistrosProcesadoRRHH(registroIds, maxRetries = 3) {
     console.warn(
       "⚠️ APP_ID and APP_KEY not configured. Skipping AppSheet updates.",
     );
-    return;
+    return { successful: [], failed: [] };
   }
 
   const url = `https://www.appsheet.com/api/v2/apps/${appId}/tables/registro_actividad/Action`;
 
-  const failedUpdates = [];
-
-  // Update records with retry logic
-  for (const registroId of registroIds) {
-    let success = false;
+  // Helper function to update a single record with retry logic
+  const updateSingleRecord = async (registroId) => {
     let lastError = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -49,8 +46,7 @@ async function updateRegistrosProcesadoRRHH(registroIds, maxRetries = 3) {
         }
 
         console.log(`✅ Updated procesado_rrhh for registro ${registroId}`);
-        success = true;
-        break;
+        return { registroId, success: true };
       } catch (error) {
         lastError = error;
         console.warn(
@@ -60,26 +56,64 @@ async function updateRegistrosProcesadoRRHH(registroIds, maxRetries = 3) {
         if (attempt < maxRetries) {
           // Wait before retrying (exponential backoff)
           const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
-          console.log(`⏳ Waiting ${waitTime}ms before retry...`);
           await new Promise((resolve) => setTimeout(resolve, waitTime));
         }
       }
     }
 
-    if (!success) {
-      console.error(
-        `❌ Failed to update registro ${registroId} after ${maxRetries} attempts:`,
-        lastError.message,
-      );
-      failedUpdates.push(registroId);
+    console.error(
+      `❌ Failed to update registro ${registroId} after ${maxRetries} attempts:`,
+      lastError.message,
+    );
+    return { registroId, success: false, error: lastError.message };
+  };
+
+  // Process records in batches to avoid overwhelming AppSheet API
+  const BATCH_SIZE = parseInt(process.env.APPSHEET_BATCH_SIZE || "10", 10);
+  const BATCH_DELAY_MS = parseInt(
+    process.env.APPSHEET_BATCH_DELAY_MS || "2000",
+    10,
+  );
+
+  const successful = [];
+  const failed = [];
+
+  for (let i = 0; i < registroIds.length; i += BATCH_SIZE) {
+    const batch = registroIds.slice(i, i + BATCH_SIZE);
+    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
+    const totalBatches = Math.ceil(registroIds.length / BATCH_SIZE);
+
+    console.log(
+      `🔄 Processing batch ${batchNumber}/${totalBatches} (${batch.length} records)...`,
+    );
+
+    // Process current batch in parallel
+    const batchResults = await Promise.allSettled(
+      batch.map((id) => updateSingleRecord(id)),
+    );
+
+    // Collect results from this batch
+    batchResults.forEach((result) => {
+      if (result.status === "fulfilled") {
+        if (result.value.success) {
+          successful.push(result.value.registroId);
+        } else {
+          failed.push(result.value.registroId);
+        }
+      } else {
+        // This shouldn't happen since updateSingleRecord catches all errors
+        failed.push({ error: result.reason });
+      }
+    });
+
+    // Wait before processing next batch (except for the last batch)
+    if (i + BATCH_SIZE < registroIds.length) {
+      console.log(`⏳ Waiting ${BATCH_DELAY_MS}ms before next batch...`);
+      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
     }
   }
 
-  if (failedUpdates.length > 0) {
-    throw new Error(
-      `Failed to update ${failedUpdates.length} records: ${failedUpdates.join(", ")}`,
-    );
-  }
+  return { successful, failed };
 }
 
 export function generateFortnightReportData(transformedData) {
@@ -589,21 +623,26 @@ export async function sendMonthlyReportEmail(
 
   console.log(`📧 Monthly report email sent to: ${recipients}`);
 
-  // Commented out: Update procesado_rrhh to Y for all processed records (AFTER email is sent)
-  // const registroIds = reportData.map((record) => record.id_registro);
-  // console.log(
-  //   `📝 Updating procesado_rrhh for ${registroIds.length} records...`,
-  // );
-  // try {
-  //   await updateRegistrosProcesadoRRHH(registroIds);
-  //   console.log(`✅ All ${registroIds.length} records updated in AppSheet`);
-  // } catch (error) {
-  //   // Log error but DON'T throw - email was already sent successfully
-  //   console.error(
-  //     `❌ Failed to update records after all retries: ${error.message}`,
-  //   );
-  //   console.error(
-  //     `⚠️ Email was sent but ${registroIds.length} records were NOT marked as processed`,
-  //   );
-  // }
+  const registroIds = reportData.map((record) => record.id_registro);
+  console.log(
+    `📝 Updating procesado_rrhh for ${registroIds.length} records in parallel...`,
+  );
+
+  const { successful, failed } =
+    await updateRegistrosProcesadoRRHH(registroIds);
+
+  if (successful.length > 0) {
+    console.log(
+      `✅ Successfully updated ${successful.length} records in AppSheet`,
+    );
+  }
+
+  if (failed.length > 0) {
+    console.error(
+      `❌ Failed to update ${failed.length} records: ${failed.join(", ")}`,
+    );
+    console.error(
+      `⚠️ Email was sent but ${failed.length} records were NOT marked as processed`,
+    );
+  }
 }

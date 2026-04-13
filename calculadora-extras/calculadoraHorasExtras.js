@@ -21,7 +21,7 @@ export function calcularHorasExtras(registros) {
       "registros rowId",
       registros.map((r) => r.rowId),
     );
-    throw new Error(especificacionRangosNoSuperpuestos.obtenerMensajeError());
+    // throw new Error(especificacionRangosNoSuperpuestos.obtenerMensajeError());
   }
 
   const fechasFestivas = construirFechas(...FESTIVOS);
