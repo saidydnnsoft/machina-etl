@@ -1,8 +1,6 @@
 import ExcelJS from "exceljs";
 import { getBogotaDateString } from "./utils.js";
-import {
-  CONCEPTOS_BITAKORA,
-} from "../calculadora-extras/bitakora.js";
+import { CONCEPTOS_BITAKORA } from "../calculadora-extras/bitakora.js";
 
 async function updateRegistrosProcesadoRRHH(registroIds, maxRetries = 3) {
   const appId = process.env.APP_ID;
@@ -483,22 +481,16 @@ export async function sendMonthlyReportEmail(
     return;
   }
 
-  // Parse EXTRAS_REPORT_FROM (format: DD-MM-YYYY) - this is the absolute start date
-  const reportFromStr = process.env.EXTRAS_REPORT_FROM;
-  let rangeStart;
-  if (reportFromStr) {
-    const [day, month, year] = reportFromStr.split("-").map(Number);
-    rangeStart = new Date(year, month - 1, day);
-  }
-
-  // Determine rangeEnd based on cutoff day
-  let rangeEnd;
+  // Determine rangeStart and rangeEnd based on cutoff day (local Bogota time)
+  let rangeStart, rangeEnd;
 
   if (dayOfMonth === 25) {
-    // 25th: Include records up to 15th of current month
+    // 25th: Include records from 1st (00:00:00) to 15th (23:59:59) of current month
+    rangeStart = new Date(currentYear, currentMonth, 1, 0, 0, 0);
     rangeEnd = new Date(currentYear, currentMonth, 15, 23, 59, 59);
   } else if (dayOfMonth === 10) {
-    // 10th: Include records up to last day of previous month
+    // 10th: Include records from 16th (00:00:00) to last day (23:59:59) of previous month
+    rangeStart = new Date(currentYear, currentMonth - 1, 16, 0, 0, 0);
     rangeEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59);
   } else {
     console.log("Not a report day (10th or 25th). Skipping monthly report.");
@@ -529,12 +521,11 @@ export async function sendMonthlyReportEmail(
       const [month, day, year] = datePart.split("/").map(Number);
       const horaInicial = new Date(year, month - 1, day);
 
-      // Check rangeStart only if EXTRAS_REPORT_FROM is set
-      if (rangeStart && horaInicial < rangeStart) return false;
+      // Filter by fortnight date range
+      if (horaInicial < rangeStart) return false;
       if (horaInicial > rangeEnd) return false;
 
-      // Filter by procesado_rrhh (not yet processed) AND estado TERMINADO
-      if (registroRecord.procesado_rrhh === "Y") return false; // Skip already processed
+      // Filter by estado TERMINADO only
       if (registroRecord.estado !== "TERMINADO") return false; // Skip not finished
 
       return true;
@@ -598,21 +589,21 @@ export async function sendMonthlyReportEmail(
 
   console.log(`📧 Monthly report email sent to: ${recipients}`);
 
-  // Update procesado_rrhh to Y for all processed records (AFTER email is sent)
-  const registroIds = reportData.map((record) => record.id_registro);
-  console.log(
-    `📝 Updating procesado_rrhh for ${registroIds.length} records...`,
-  );
-  try {
-    await updateRegistrosProcesadoRRHH(registroIds);
-    console.log(`✅ All ${registroIds.length} records updated in AppSheet`);
-  } catch (error) {
-    // Log error but DON'T throw - email was already sent successfully
-    console.error(
-      `❌ Failed to update records after all retries: ${error.message}`,
-    );
-    console.error(
-      `⚠️ Email was sent but ${registroIds.length} records were NOT marked as processed`,
-    );
-  }
+  // Commented out: Update procesado_rrhh to Y for all processed records (AFTER email is sent)
+  // const registroIds = reportData.map((record) => record.id_registro);
+  // console.log(
+  //   `📝 Updating procesado_rrhh for ${registroIds.length} records...`,
+  // );
+  // try {
+  //   await updateRegistrosProcesadoRRHH(registroIds);
+  //   console.log(`✅ All ${registroIds.length} records updated in AppSheet`);
+  // } catch (error) {
+  //   // Log error but DON'T throw - email was already sent successfully
+  //   console.error(
+  //     `❌ Failed to update records after all retries: ${error.message}`,
+  //   );
+  //   console.error(
+  //     `⚠️ Email was sent but ${registroIds.length} records were NOT marked as processed`,
+  //   );
+  // }
 }
