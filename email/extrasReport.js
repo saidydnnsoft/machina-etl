@@ -518,13 +518,25 @@ export async function sendMonthlyReportEmail(
   // Determine rangeStart and rangeEnd based on cutoff day (local Bogota time)
   let rangeStart, rangeEnd;
 
+  // Get rangeStart from env variable if provided, otherwise use null (no start cap)
+  const extrasReportFrom = process.env.EXTRAS_REPORT_FROM;
+  if (extrasReportFrom) {
+    // Parse format: YYYY-MM-DD
+    const [year, month, day] = extrasReportFrom.split("-").map(Number);
+    rangeStart = new Date(year, month - 1, day, 0, 0, 0);
+    console.log(
+      `📅 Using EXTRAS_REPORT_FROM: ${rangeStart.toISOString()}`,
+    );
+  } else {
+    rangeStart = null; // No start date cap
+    console.log("📅 No EXTRAS_REPORT_FROM set - processing all unprocessed records");
+  }
+
   if (dayOfMonth === 25) {
-    // 25th: Include records from 1st (00:00:00) to 15th (23:59:59) of current month
-    rangeStart = new Date(currentYear, currentMonth, 1, 0, 0, 0);
+    // 25th: Include records up to 15th (23:59:59) of current month
     rangeEnd = new Date(currentYear, currentMonth, 15, 23, 59, 59);
   } else if (dayOfMonth === 10) {
-    // 10th: Include records from 16th (00:00:00) to last day (23:59:59) of previous month
-    rangeStart = new Date(currentYear, currentMonth - 1, 16, 0, 0, 0);
+    // 10th: Include records up to last day (23:59:59) of previous month
     rangeEnd = new Date(currentYear, currentMonth, 0, 23, 59, 59);
   } else {
     console.log("Not a report day (10th or 25th). Skipping monthly report.");
@@ -550,13 +562,17 @@ export async function sendMonthlyReportEmail(
       );
       if (!registroRecord?.hora_inicial) return false;
 
+      // Filter by procesado_rrhh - only include unprocessed records
+      if (registroRecord.procesado_rrhh === "Y") return false;
+
       // Parse hora_inicial (format: "MM/DD/YYYY HH:MM:SS")
       const [datePart] = registroRecord.hora_inicial.split(" ");
       const [month, day, year] = datePart.split("/").map(Number);
       const horaInicial = new Date(year, month - 1, day);
 
       // Filter by fortnight date range
-      if (horaInicial < rangeStart) return false;
+      // Only check rangeStart if it's defined
+      if (rangeStart && horaInicial < rangeStart) return false;
       if (horaInicial > rangeEnd) return false;
 
       // Filter by estado TERMINADO only
