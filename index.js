@@ -69,7 +69,7 @@ functions.http("runEtl", async (req, res) => {
     // Send monthly report email on day 10 or 25 of each month
     const dayOfMonth = bogotaTime.getDate();
 
-    if (dayOfMonth === 10 || dayOfMonth === 25) {
+    if (dayOfMonth === 10 || dayOfMonth === 24) {
       try {
         const transporter = nodemailer.createTransport({
           host: process.env.EMAIL_HOST,

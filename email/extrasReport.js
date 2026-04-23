@@ -524,15 +524,15 @@ export async function sendMonthlyReportEmail(
     // Parse format: YYYY-MM-DD
     const [year, month, day] = extrasReportFrom.split("-").map(Number);
     rangeStart = new Date(year, month - 1, day, 0, 0, 0);
-    console.log(
-      `📅 Using EXTRAS_REPORT_FROM: ${rangeStart.toISOString()}`,
-    );
+    console.log(`📅 Using EXTRAS_REPORT_FROM: ${rangeStart.toISOString()}`);
   } else {
     rangeStart = null; // No start date cap
-    console.log("📅 No EXTRAS_REPORT_FROM set - processing all unprocessed records");
+    console.log(
+      "📅 No EXTRAS_REPORT_FROM set - processing all unprocessed records",
+    );
   }
 
-  if (dayOfMonth === 25) {
+  if (dayOfMonth === 24) {
     // 25th: Include records up to 15th (23:59:59) of current month
     rangeEnd = new Date(currentYear, currentMonth, 15, 23, 59, 59);
   } else if (dayOfMonth === 10) {
