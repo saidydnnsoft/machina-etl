@@ -19,7 +19,6 @@ functions.http("runEtl", async (req, res) => {
     return res.status(405).send("Method Not Allowed");
   }
   try {
-    console.log("💥💥💥💥💥💥💥");
     console.log("🚀 Starting ETL process...");
     const rawTables = await extract();
     console.log("✅ Extraction complete.");
@@ -69,10 +68,8 @@ functions.http("runEtl", async (req, res) => {
 
     // Send monthly report email on day 10 or 25 of each month
     const dayOfMonth = bogotaTime.getDate();
-    console.log("🚀 ~ dayOfMonth.......:", dayOfMonth);
 
-    if (dayOfMonth === 10 || dayOfMonth === 24) {
-      console.log("helloooooo");
+    if (dayOfMonth === 10 || dayOfMonth === 25) {
       try {
         const transporter = nodemailer.createTransport({
           host: process.env.EMAIL_HOST,
@@ -94,7 +91,7 @@ functions.http("runEtl", async (req, res) => {
       }
     }
 
-    // await load(transformedData);
+    await load(transformedData);
     res.send("✅ ETL complete!");
   } catch (error) {
     console.error("❌ ETL failed:", error.message);

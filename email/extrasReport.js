@@ -532,7 +532,7 @@ export async function sendMonthlyReportEmail(
     );
   }
 
-  if (dayOfMonth === 24) {
+  if (dayOfMonth === 25) {
     // 25th: Include records up to 15th (23:59:59) of current month
     rangeEnd = new Date(currentYear, currentMonth, 15, 23, 59, 59);
   } else if (dayOfMonth === 10) {
