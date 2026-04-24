@@ -19,6 +19,7 @@ functions.http("runEtl", async (req, res) => {
     return res.status(405).send("Method Not Allowed");
   }
   try {
+    console.log("💥💥💥💥💥💥💥💥💥");
     console.log("🚀 Starting ETL process...");
     const rawTables = await extract();
     console.log("✅ Extraction complete.");
