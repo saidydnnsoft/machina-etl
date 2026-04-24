@@ -68,8 +68,10 @@ functions.http("runEtl", async (req, res) => {
 
     // Send monthly report email on day 10 or 25 of each month
     const dayOfMonth = bogotaTime.getDate();
+    console.log("🚀 ~ dayOfMonth:", dayOfMonth);
 
     if (dayOfMonth === 10 || dayOfMonth === 24) {
+      console.log("helloooooo");
       try {
         const transporter = nodemailer.createTransport({
           host: process.env.EMAIL_HOST,
@@ -91,7 +93,7 @@ functions.http("runEtl", async (req, res) => {
       }
     }
 
-    await load(transformedData);
+    // await load(transformedData);
     res.send("✅ ETL complete!");
   } catch (error) {
     console.error("❌ ETL failed:", error.message);
