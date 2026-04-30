@@ -24,7 +24,7 @@ function formatDate(dateStr, includeTime = false) {
 
   const formattedDate = `${year}-${month.padStart(2, "0")}-${day.padStart(
     2,
-    "0"
+    "0",
   )}`;
 
   if (!includeTime || !timePart) {
@@ -53,7 +53,7 @@ function transform_dim_usuario(usuarios_arr) {
 
 function transform_dim_equipo(equipos_arr, etiquetas_equipos_arr) {
   const etiquetas_equipos_map = new Map(
-    etiquetas_equipos_arr.map((et) => [et["Row ID"], et])
+    etiquetas_equipos_arr.map((et) => [et["Row ID"], et]),
   );
 
   if (!equipos_arr) return [];
@@ -67,23 +67,23 @@ function transform_dim_equipo(equipos_arr, etiquetas_equipos_arr) {
       e.unidad_rendimiento_combustible_teorico === "GPH"
     ) {
       rendimientoCombustibleTeorico = parseFloat(
-        e.rendimiento_combustible_teorico || 0
+        e.rendimiento_combustible_teorico || 0,
       );
     }
 
     if (e.unidad_rendimiento_combustible_teorico === "LPH") {
       rendimientoCombustibleTeorico = parseFloat(
         (parseFloat(e.rendimiento_combustible_teorico || 0) * 0.264172).toFixed(
-          2
-        )
+          2,
+        ),
       );
     }
 
     if (e.unidad_rendimiento_combustible_teorico === "KMPL") {
       rendimientoCombustibleTeorico = parseFloat(
         (parseFloat(e.rendimiento_combustible_teorico || 0) / 0.264172).toFixed(
-          2
-        )
+          2,
+        ),
       );
     }
 
@@ -172,7 +172,7 @@ function transform_fact_produccion(rawData) {
   } = rawData;
 
   const registros_con_hora_final = registro_actividad.filter(
-    (r) => r.hora_final
+    (r) => r.hora_final,
   );
 
   const registro_actividad_map = new Map();
@@ -190,7 +190,7 @@ function transform_fact_produccion(rawData) {
       .sort(
         (a, b) =>
           new Date(a.hora_inicial).getTime() -
-          new Date(b.hora_inicial).getTime()
+          new Date(b.hora_inicial).getTime(),
       );
   });
 
@@ -205,7 +205,7 @@ function transform_fact_produccion(rawData) {
       .sort(
         (a, b) =>
           new Date(b.vigente_desde).getTime() -
-          new Date(a.vigente_desde).getTime()
+          new Date(a.vigente_desde).getTime(),
       );
   });
 
@@ -221,7 +221,7 @@ function transform_fact_produccion(rawData) {
 
   const equipos_map = new Map(equipo.map((e) => [e["Row ID"], e]));
   const etiquetas_equipos_map = new Map(
-    etiquetas_equipos.map((e) => [e["Row ID"], e])
+    etiquetas_equipos.map((e) => [e["Row ID"], e]),
   );
   const viajes_map = new Map(viaje.map((v) => [v["Row ID"], v]));
   const obras_map = new Map(obra.map((o) => [o["Row ID"], o]));
@@ -254,7 +254,7 @@ function transform_fact_produccion(rawData) {
     obra_name,
     category,
     subcategory,
-    item_data
+    item_data,
   ) {
     if (!missing_data_tracker.has(obra_name)) {
       missing_data_tracker.set(obra_name, {
@@ -300,7 +300,7 @@ function transform_fact_produccion(rawData) {
     } else if (category === "sinHoraFinal") {
       const { fecha, operadores } = item_data;
       const fecha_entry = obra_data.sinHoraFinal.fecha.find(
-        (entry) => entry.fecha === fecha
+        (entry) => entry.fecha === fecha,
       );
       if (fecha_entry) {
         fecha_entry.operadores.push(...operadores);
@@ -313,7 +313,7 @@ function transform_fact_produccion(rawData) {
   const missing_data_tracker = new Map();
 
   const registros_sin_hora_final = registro_actividad.filter(
-    (r) => !r.hora_final
+    (r) => !r.hora_final,
   );
 
   const registros_sin_hora_final_por_obra = new Map();
@@ -358,13 +358,13 @@ function transform_fact_produccion(rawData) {
 
       registros.forEach((r) => {
         const obra_record = obras_map.get(r.id_obra);
-        if (obra_record?.nombre_obra !== "COSTA RICA") {
+        if (obra_record?.nombre_obra !== "COSTA RICA" && !!r.hora_final) {
           const horario_obra = horarios_obras_map
             .get(r.id_obra)
             ?.find(
               (h) =>
                 new Date(h.vigente_desde).getTime() <=
-                new Date(r.hora_inicial).getTime()
+                new Date(r.hora_inicial).getTime(),
             );
 
           if (
@@ -415,7 +415,7 @@ function transform_fact_produccion(rawData) {
               formatDate(r.hora_inicial, true),
               formatDate(r.hora_final, true),
               formatDate(r.hora_inicial_receso, true),
-              formatDate(r.hora_final_receso, true)
+              formatDate(r.hora_final_receso, true),
             );
             return acc + horas_trabajadas;
           }
@@ -428,7 +428,7 @@ function transform_fact_produccion(rawData) {
             formatDate(r.hora_inicial, true),
             formatDate(r.hora_final, true),
             formatDate(r.hora_inicial_receso, true),
-            formatDate(r.hora_final_receso, true)
+            formatDate(r.hora_final_receso, true),
           );
           return acc + horas_trabajadas;
         }, 0);
@@ -455,7 +455,7 @@ function transform_fact_produccion(rawData) {
               formatDate(registro.hora_inicial, true),
               formatDate(registro.hora_final, true),
               formatDate(registro.hora_inicial_receso, true),
-              formatDate(registro.hora_final_receso, true)
+              formatDate(registro.hora_final_receso, true),
             )
           : 0;
 
@@ -464,7 +464,7 @@ function transform_fact_produccion(rawData) {
           ?.find(
             (s) =>
               new Date(s.vigente_desde).getTime() <=
-              new Date(registro.hora_inicial).getTime()
+              new Date(registro.hora_inicial).getTime(),
           );
 
         if (!salario_record && obra_record.nombre_obra !== "COSTA RICA") {
@@ -472,7 +472,7 @@ function transform_fact_produccion(rawData) {
             obra_record.nombre_obra,
             "salario",
             null,
-            operador_record.usuario
+            operador_record.usuario,
           );
         }
 
@@ -483,39 +483,39 @@ function transform_fact_produccion(rawData) {
 
         const extras_registro = {
           heod: parseFloat(
-            (extras.heod * porcentaje_registro_en_dia_para_extras).toFixed(2)
+            (extras.heod * porcentaje_registro_en_dia_para_extras).toFixed(2),
           ),
           heon: parseFloat(
-            (extras.heon * porcentaje_registro_en_dia_para_extras).toFixed(2)
+            (extras.heon * porcentaje_registro_en_dia_para_extras).toFixed(2),
           ),
           hefd: parseFloat(
-            (extras.hefd * porcentaje_registro_en_dia_para_extras).toFixed(2)
+            (extras.hefd * porcentaje_registro_en_dia_para_extras).toFixed(2),
           ),
           hefn: parseFloat(
-            (extras.hefn * porcentaje_registro_en_dia_para_extras).toFixed(2)
+            (extras.hefn * porcentaje_registro_en_dia_para_extras).toFixed(2),
           ),
           rno: parseFloat(
-            (extras.rno * porcentaje_registro_en_dia_para_extras).toFixed(2)
+            (extras.rno * porcentaje_registro_en_dia_para_extras).toFixed(2),
           ),
           rnf: parseFloat(
-            (extras.rnf * porcentaje_registro_en_dia_para_extras).toFixed(2)
+            (extras.rnf * porcentaje_registro_en_dia_para_extras).toFixed(2),
           ),
           hf: parseFloat(
-            (extras.hf * porcentaje_registro_en_dia_para_extras).toFixed(2)
+            (extras.hf * porcentaje_registro_en_dia_para_extras).toFixed(2),
           ),
         };
 
         const concepto_extra_aplicable = conceptos_extras.find(
           (c) =>
             new Date(c.vigente_desde).getTime() <=
-            new Date(registro.hora_inicial).getTime()
+            new Date(registro.hora_inicial).getTime(),
         );
 
         const horas_maximas_ordinarias_mensuales =
           HORAS_MAXIMAS_ORDINARIAS.find(
             (h) =>
               new Date(h.vigente_desde).getTime() <=
-              new Date(registro.hora_inicial).getTime()
+              new Date(registro.hora_inicial).getTime(),
           )?.horas_maximas_mensuales ?? 240;
 
         const valor_extras_y_recargos = Object.keys(extras_registro).reduce(
@@ -525,7 +525,7 @@ function transform_fact_produccion(rawData) {
               parseFloat(concepto_extra_aplicable[key] ?? 0) *
               parseFloat(extras_registro[key]) +
             acc,
-          0
+          0,
         );
 
         const equipo_record = equipos_map.get(registro.id_equipo);
@@ -546,15 +546,15 @@ function transform_fact_produccion(rawData) {
             .filter((id) => id) ?? [];
 
         const info_precio_hora = precios_etiquetas_map.get(
-          `${registro.id_obra}-${equipo_record?.id_etiqueta_equipo}-HORA`
+          `${registro.id_obra}-${equipo_record?.id_etiqueta_equipo}-HORA`,
         );
 
         const info_precio_dia = precios_etiquetas_map.get(
-          `${registro.id_obra}-${equipo_record?.id_etiqueta_equipo}-DIA`
+          `${registro.id_obra}-${equipo_record?.id_etiqueta_equipo}-DIA`,
         );
 
         const info_precio_viaje = precios_etiquetas_map.get(
-          `${registro.id_obra}-${equipo_record?.id_etiqueta_equipo}-VIAJE`
+          `${registro.id_obra}-${equipo_record?.id_etiqueta_equipo}-VIAJE`,
         );
 
         // HORA
@@ -563,13 +563,13 @@ function transform_fact_produccion(rawData) {
         ].sort(
           (a, b) =>
             new Date(b.historico_desde).getTime() -
-            new Date(a.historico_desde).getTime()
+            new Date(a.historico_desde).getTime(),
         );
         const precio_unitario_hora =
           info_precio_hora_por_fecha_descendiente?.find(
             (p) =>
               new Date(p.historico_desde).getTime() <=
-              new Date(registro.hora_inicial).getTime()
+              new Date(registro.hora_inicial).getTime(),
           )?.precio || 0;
 
         if (!precio_unitario_hora && tipo_activo === "EQUIPO") {
@@ -577,7 +577,7 @@ function transform_fact_produccion(rawData) {
             obra_record.nombre_obra,
             "precioEquipo",
             "hora",
-            etiqueta_equipo_record.etiqueta
+            etiqueta_equipo_record.etiqueta,
           );
         }
 
@@ -591,13 +591,13 @@ function transform_fact_produccion(rawData) {
         ].sort(
           (a, b) =>
             new Date(b.historico_desde).getTime() -
-            new Date(a.historico_desde).getTime()
+            new Date(a.historico_desde).getTime(),
         );
         const precio_unitario_dia =
           info_precio_dia_por_fecha_descendiente?.find(
             (p) =>
               new Date(p.historico_desde).getTime() <=
-              new Date(registro.hora_inicial).getTime()
+              new Date(registro.hora_inicial).getTime(),
           )?.precio || 0;
 
         if (
@@ -608,7 +608,7 @@ function transform_fact_produccion(rawData) {
             obra_record.nombre_obra,
             "precioEquipo",
             "dia",
-            etiqueta_equipo_record.etiqueta
+            etiqueta_equipo_record.etiqueta,
           );
         }
 
@@ -621,7 +621,7 @@ function transform_fact_produccion(rawData) {
             obra_record.nombre_obra,
             "precioEquipo",
             "dia",
-            etiqueta_equipo_record.etiqueta
+            etiqueta_equipo_record.etiqueta,
           );
         }
 
@@ -639,7 +639,7 @@ function transform_fact_produccion(rawData) {
         const valor_activo_por_dia = parseFloat(
           precio_unitario_dia *
             porcentaje_registro_en_dia_para_activo_por_dia *
-            porcentaje_no_varado_equipo_registro_para_cobros_por_dia
+            porcentaje_no_varado_equipo_registro_para_cobros_por_dia,
         );
 
         // VIAJES
@@ -648,7 +648,7 @@ function transform_fact_produccion(rawData) {
             const record_viaje = viajes_map.get(id);
             if (!record_viaje) return acc;
             const destino = destinos_map?.get(
-              record_viaje.id_destino
+              record_viaje.id_destino,
             )?.nombre_destino;
 
             const info_precio_destino =
@@ -659,7 +659,7 @@ function transform_fact_produccion(rawData) {
             ].sort(
               (a, b) =>
                 new Date(b.historico_desde).getTime() -
-                new Date(a.historico_desde).getTime()
+                new Date(a.historico_desde).getTime(),
             );
 
             const precio_unitario_viaje = precio_unitario_dia
@@ -667,7 +667,7 @@ function transform_fact_produccion(rawData) {
               : info_precio_destino_por_fecha_descendiente?.find(
                   (p) =>
                     new Date(p.historico_desde).getTime() <=
-                    new Date(registro.hora_inicial).getTime()
+                    new Date(registro.hora_inicial).getTime(),
                 )?.precio || 0;
 
             if (
@@ -679,7 +679,7 @@ function transform_fact_produccion(rawData) {
                 obra_record.nombre_obra,
                 "precioEquipo",
                 "viaje",
-                { destino, etiqueta: etiqueta_equipo_record.etiqueta }
+                { destino, etiqueta: etiqueta_equipo_record.etiqueta },
               );
             }
 
@@ -691,7 +691,7 @@ function transform_fact_produccion(rawData) {
               num_viajes: acc.num_viajes + parseFloat(record_viaje.num_viajes),
             };
           },
-          { valor_viajes: 0, num_viajes: 0 }
+          { valor_viajes: 0, num_viajes: 0 },
         ) || { valor_viajes: 0, num_viajes: 0 };
 
         const valor_activo =
@@ -727,20 +727,20 @@ function transform_fact_produccion(rawData) {
           estado_aprobacion: registro.estado_aprobacion ?? null,
           varado: registro.varado === "Y" ? "Sí" : "No",
           horas_trabajadas_equipo: parseFloat(
-            registro.horas_trabajadas_maquina || 0
+            registro.horas_trabajadas_maquina || 0,
           ),
           kilometros_recorridos: parseFloat(
-            registro.kilometros_recorridos || 0
+            registro.kilometros_recorridos || 0,
           ),
           horas_trabajadas_operador: parseFloat(
-            horas_trabajadas_operador_en_registro.toFixed(2)
+            horas_trabajadas_operador_en_registro.toFixed(2),
           ),
           combustible:
             registro.unidad_de_medida === "Galones"
               ? parseFloat(registro.combustible || 0)
               : // se asume que si no es galon es litro
                 parseFloat(
-                  (parseFloat(registro.combustible || 0) * 0.264172).toFixed(2)
+                  (parseFloat(registro.combustible || 0) * 0.264172).toFixed(2),
                 ),
           horas_varado,
           heod: extras_registro.heod,
@@ -751,7 +751,7 @@ function transform_fact_produccion(rawData) {
           rnf: extras_registro.rnf,
           hf: extras_registro.hf,
           valor_extras_y_recargos: parseFloat(
-            (valor_extras_y_recargos || 0).toFixed(2)
+            (valor_extras_y_recargos || 0).toFixed(2),
           ),
           valor_activo: valor_activo,
           num_viajes: info_viajes.num_viajes,
@@ -763,7 +763,7 @@ function transform_fact_produccion(rawData) {
             etiquetas_equipos_map.get(accesorio_record?.id_etiqueta_equipo) ||
             null;
           const info_precio_dia_accesorio = precios_etiquetas_map.get(
-            `${registro.id_obra}-${accesorio_record?.id_etiqueta_equipo}-DIA`
+            `${registro.id_obra}-${accesorio_record?.id_etiqueta_equipo}-DIA`,
           );
 
           // DIA
@@ -772,13 +772,13 @@ function transform_fact_produccion(rawData) {
           ].sort(
             (a, b) =>
               new Date(b.historico_desde).getTime() -
-              new Date(a.historico_desde).getTime()
+              new Date(a.historico_desde).getTime(),
           );
           const precio_unitario_dia_accesorio =
             info_precio_dia_accesorio_por_fecha_descendiente?.find(
               (p) =>
                 new Date(p.historico_desde).getTime() <=
-                new Date(registro.hora_inicial).getTime()
+                new Date(registro.hora_inicial).getTime(),
             )?.precio || 0;
 
           if (!precio_unitario_dia_accesorio) {
@@ -786,7 +786,7 @@ function transform_fact_produccion(rawData) {
               obra_record.nombre_obra,
               "precioEquipo",
               "dia",
-              etiqueta_acesorio_record.etiqueta
+              etiqueta_acesorio_record.etiqueta,
             );
           }
 
@@ -797,7 +797,7 @@ function transform_fact_produccion(rawData) {
           const valor_activo_por_dia_accesorio = parseFloat(
             precio_unitario_dia_accesorio *
               porcentaje_registro_en_dia_para_activo_por_dia *
-              porcentaje_no_varado_equipo_registro_para_cobros_por_dia
+              porcentaje_no_varado_equipo_registro_para_cobros_por_dia,
           );
 
           fact_produccion.push({
@@ -813,7 +813,7 @@ function transform_fact_produccion(rawData) {
             estado_aprobacion: registro.estado_aprobacion ?? null,
             varado: registro.varado === "Y" ? "Sí" : "No",
             horas_trabajadas_equipo: parseFloat(
-              registro.horas_trabajadas_accesorio || 0
+              registro.horas_trabajadas_accesorio || 0,
             ),
             kilometros_recorridos: 0,
             horas_trabajadas_operador: 0,
@@ -908,7 +908,7 @@ export function transform(tables) {
   // --- 2. Transform Other Dimensions ---
   transformed_data.dim_equipo = transform_dim_equipo(
     tables.equipo,
-    tables.etiquetas_equipos
+    tables.etiquetas_equipos,
   );
   transformed_data.dim_obra = transform_dim_obra(tables.obra);
   transformed_data.dim_usuario = transform_dim_usuario(tables.usuario);
