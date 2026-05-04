@@ -8,6 +8,7 @@ import { calcularHorasTrabajadas } from "../calculadora-extras/utilitarios.js";
 import { CONCEPTOS_EXTRAS } from "../calculadora-extras/conceptosExtras.js";
 import { calcularHorasExtras } from "../calculadora-extras/calculadoraHorasExtras.js";
 import { HORAS_MAXIMAS_ORDINARIAS } from "../calculadora-extras/constantes.js";
+import { FESTIVOS } from "../calculadora-extras/festivos.js";
 
 // --- Transformation ---
 function formatDate(dateStr, includeTime = false) {
@@ -154,6 +155,30 @@ function transform_dim_fecha(uniqueDateStringsSet) {
     });
   }
   return dimDateRows;
+}
+
+// Mirrors the AppSheet show-if rule for hora_final:
+// hora_final is only applicable for VOLQUETA equipos (with registro_horario_volquetas_L_V_no_festivos = false)
+// on weekends or festivos; all other equipos always apply.
+function isElegibleParaHorasExtras(r, equipos_map, etiquetas_equipos_map, obra_record) {
+  if (!r.hora_inicial || !r.id_obra || !r.id_equipo) return false;
+
+  const equipo_record = equipos_map.get(r.id_equipo);
+  const etiqueta_equipo_record = etiquetas_equipos_map.get(equipo_record?.id_etiqueta_equipo);
+  const tipo_equipo = equipo_record?.tipo_equipo ?? etiqueta_equipo_record?.tipo_equipo;
+
+  if (tipo_equipo === "VOLQUETA" && !obra_record?.registro_horario_volquetas_L_V_no_festivos) {
+    const parts = r.hora_inicial.split(" ")[0].split("/");
+    const [month, day, year] = parts.map(Number);
+    const fecha = new Date(year, month - 1, day);
+    const dayOfWeek = fecha.getDay(); // 0=Sunday, 6=Saturday
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const isFestivo = FESTIVOS.includes(dateStr);
+    return isWeekend || isFestivo;
+  }
+
+  return true;
 }
 
 // Fact Transformer
@@ -358,7 +383,7 @@ function transform_fact_produccion(rawData) {
 
       registros.forEach((r) => {
         const obra_record = obras_map.get(r.id_obra);
-        if (obra_record?.nombre_obra !== "COSTA RICA" && !!r.hora_final) {
+        if (obra_record?.nombre_obra !== "COSTA RICA" && isElegibleParaHorasExtras(r, equipos_map, etiquetas_equipos_map, obra_record)) {
           const horario_obra = horarios_obras_map
             .get(r.id_obra)
             ?.find(
