@@ -158,7 +158,7 @@ function transform_dim_fecha(uniqueDateStringsSet) {
 }
 
 // Mirrors the AppSheet show-if rule for hora_final:
-// hora_final is only applicable for VOLQUETA equipos (with registro_horario_volquetas_L_V_no_festivos = false)
+// hora_final is only applicable for VOLQUETA equipos (with registro_horario_volquetas_L_V_no_festivos = "N")
 // on weekends or festivos; all other equipos always apply.
 function isElegibleParaHorasExtras(r, equipos_map, etiquetas_equipos_map, obra_record) {
   if (!r.hora_inicial || !r.id_obra || !r.id_equipo) return false;
@@ -167,7 +167,7 @@ function isElegibleParaHorasExtras(r, equipos_map, etiquetas_equipos_map, obra_r
   const etiqueta_equipo_record = etiquetas_equipos_map.get(equipo_record?.id_etiqueta_equipo);
   const tipo_equipo = equipo_record?.tipo_equipo ?? etiqueta_equipo_record?.tipo_equipo;
 
-  if (tipo_equipo === "VOLQUETA" && !obra_record?.registro_horario_volquetas_L_V_no_festivos) {
+  if (tipo_equipo === "VOLQUETA" && obra_record?.registro_horario_volquetas_L_V_no_festivos === "N") {
     const parts = r.hora_inicial.split(" ")[0].split("/");
     const [month, day, year] = parts.map(Number);
     const fecha = new Date(year, month - 1, day);
@@ -435,7 +435,7 @@ function transform_fact_produccion(rawData) {
       const total_horas_trabajadas_dia_para_distribuir_extras =
         registros.reduce((acc, r) => {
           const obra_record = obras_map.get(r.id_obra);
-          if (r.hora_final && obra_record?.nombre_obra !== "COSTA RICA") {
+          if (r.hora_final && obra_record?.nombre_obra !== "COSTA RICA" && isElegibleParaHorasExtras(r, equipos_map, etiquetas_equipos_map, obra_record)) {
             const horas_trabajadas = calcularHorasTrabajadas(
               formatDate(r.hora_inicial, true),
               formatDate(r.hora_final, true),
