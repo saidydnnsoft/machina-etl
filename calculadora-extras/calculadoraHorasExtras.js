@@ -28,7 +28,9 @@ export function calcularHorasExtras(registros) {
   const fabricaRangosHorarios = new FabricaRangosHorarios();
   const rangosHorarios = [];
   const registrosAumentados = [];
-  for (const registro of registros.sort((a, b) => a.horaInicio - b.horaFin)) {
+  for (const registro of registros.sort(
+    (a, b) => a.horaInicio - b.horaInicio,
+  )) {
     const {
       horaInicio,
       horaFin,
