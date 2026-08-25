@@ -377,6 +377,7 @@ function transform_fact_produccion(rawData) {
   }
 
   const fact_produccion = [];
+  const _debug_extras_errors = new Map(); // obra_name -> [{ rowId, error }]
   for (const [_, fechas_map] of registro_actividad_map) {
     for (const [_, registros] of fechas_map) {
       const registros_para_calcular_extras = [];
@@ -458,17 +459,22 @@ function transform_fact_produccion(rawData) {
           return acc + horas_trabajadas;
         }, 0);
 
-      const extras = registros_para_calcular_extras.length
-        ? calcularHorasExtras(registros_para_calcular_extras)
-        : {
-            heod: 0,
-            heon: 0,
-            hefd: 0,
-            hefn: 0,
-            rno: 0,
-            rnf: 0,
-            hf: 0,
-          };
+      let extras;
+      if (registros_para_calcular_extras.length) {
+        const _debug_obra_name = obras_map.get(registros[0]?.id_obra)?.nombre_obra;
+        try {
+          extras = calcularHorasExtras(registros_para_calcular_extras);
+        } catch (e) {
+          if (!_debug_extras_errors.has(_debug_obra_name)) _debug_extras_errors.set(_debug_obra_name, []);
+          _debug_extras_errors.get(_debug_obra_name).push({
+            rowIds: registros_para_calcular_extras.map((r) => r.rowId),
+            error: e.message,
+          });
+          extras = { heod: 0, heon: 0, hefd: 0, hefn: 0, rno: 0, rnf: 0, hf: 0 };
+        }
+      } else {
+        extras = { heod: 0, heon: 0, hefd: 0, hefn: 0, rno: 0, rnf: 0, hf: 0 };
+      }
 
       // procesar registros e incluir las extras calculadas en el punto anterior en cada registro
       for (const registro of registros) {
@@ -907,6 +913,10 @@ function transform_fact_produccion(rawData) {
   // } else {
   //   console.log("✅ No missing data found!");
   // }
+
+  if (_debug_extras_errors.size > 0) {
+    console.log("[DEBUG] obras con errores en calcularHorasExtras:", JSON.stringify(Object.fromEntries(_debug_extras_errors), null, 2));
+  }
 
   return { fact_produccion, missing_data_tracker };
 }

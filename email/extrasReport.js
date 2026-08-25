@@ -2,7 +2,10 @@ import ExcelJS from "exceljs";
 import { getBogotaDateString } from "./utils.js";
 import { CONCEPTOS_BITAKORA } from "../calculadora-extras/bitakora.js";
 
-async function updateRegistrosProcesadoRRHH(registroIds, maxRetries = 3) {
+// Marca registros como procesados poniendo procesado_rrhh="Y" en registro_actividad,
+// mediante bulk Edit (muchos Rows por POST) en vez de 1 POST por registro. Así la
+// marca queda visible en la tabla operativa y el job termina en ~segundos.
+async function updateRegistrosProcesadoRRHH(registroIds, maxRetries = 5) {
   const appId = process.env.APP_ID;
   const appKey = process.env.APP_KEY;
 
@@ -15,11 +18,20 @@ async function updateRegistrosProcesadoRRHH(registroIds, maxRetries = 3) {
 
   const url = `https://www.appsheet.com/api/v2/apps/${appId}/tables/registro_actividad/Action`;
 
-  // Helper function to update a single record with retry logic
-  const updateSingleRecord = async (registroId) => {
+  // Timeout por request: abortamos y reintentamos si una request se cuelga, en
+  // vez de esperar indefinidamente.
+  const FETCH_TIMEOUT_MS = parseInt(
+    process.env.APPSHEET_FETCH_TIMEOUT_MS || "60000",
+    10,
+  );
+
+  // Edita un chunk completo en una sola llamada, con retry + backoff exponencial.
+  const editChunk = async (chunk) => {
     let lastError = null;
 
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
       try {
         const response = await fetch(url, {
           method: "POST",
@@ -32,84 +44,74 @@ async function updateRegistrosProcesadoRRHH(registroIds, maxRetries = 3) {
             Properties: {
               Locale: "en-US",
             },
-            Rows: [
-              {
-                "Row ID": registroId,
-                procesado_rrhh: "Y",
-              },
-            ],
+            Rows: chunk.map((registroId) => ({
+              "Row ID": registroId,
+              procesado_rrhh: "Y",
+            })),
           }),
+          signal: controller.signal,
         });
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${await response.text()}`);
         }
 
-        console.log(`✅ Updated procesado_rrhh for registro ${registroId}`);
-        return { registroId, success: true };
+        console.log(
+          `✅ Marcados ${chunk.length} registros como procesado_rrhh`,
+        );
+        return { success: true, ids: chunk };
       } catch (error) {
         lastError = error;
         console.warn(
-          `⚠️ Attempt ${attempt}/${maxRetries} failed for registro ${registroId}: ${error.message}`,
+          `⚠️ Attempt ${attempt}/${maxRetries} failed for chunk of ${chunk.length}: ${error.message}`,
         );
 
         if (attempt < maxRetries) {
-          // Wait before retrying (exponential backoff)
-          const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+          // Wait before retrying (exponential backoff, cap 20s)
+          const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 20000);
           await new Promise((resolve) => setTimeout(resolve, waitTime));
         }
+      } finally {
+        clearTimeout(timeoutId);
       }
     }
 
     console.error(
-      `❌ Failed to update registro ${registroId} after ${maxRetries} attempts:`,
+      `❌ Failed to mark chunk of ${chunk.length} after ${maxRetries} attempts:`,
       lastError.message,
     );
-    return { registroId, success: false, error: lastError.message };
+    return { success: false, ids: chunk, error: lastError.message };
   };
 
-  // Process records in batches to avoid overwhelming AppSheet API
-  const BATCH_SIZE = parseInt(process.env.APPSHEET_BATCH_SIZE || "10", 10);
-  const BATCH_DELAY_MS = parseInt(
-    process.env.APPSHEET_BATCH_DELAY_MS || "2000",
+  // 1 POST por chunk (no por registro). Tuneable por env.
+  const CHUNK_SIZE = parseInt(process.env.APPSHEET_CHUNK_SIZE || "50", 10);
+  const CHUNK_DELAY_MS = parseInt(
+    process.env.APPSHEET_CHUNK_DELAY_MS || "200",
     10,
   );
 
   const successful = [];
   const failed = [];
 
-  for (let i = 0; i < registroIds.length; i += BATCH_SIZE) {
-    const batch = registroIds.slice(i, i + BATCH_SIZE);
-    const batchNumber = Math.floor(i / BATCH_SIZE) + 1;
-    const totalBatches = Math.ceil(registroIds.length / BATCH_SIZE);
+  for (let i = 0; i < registroIds.length; i += CHUNK_SIZE) {
+    const chunk = registroIds.slice(i, i + CHUNK_SIZE);
+    const chunkNumber = Math.floor(i / CHUNK_SIZE) + 1;
+    const totalChunks = Math.ceil(registroIds.length / CHUNK_SIZE);
 
     console.log(
-      `🔄 Processing batch ${batchNumber}/${totalBatches} (${batch.length} records)...`,
+      `🔄 Processing chunk ${chunkNumber}/${totalChunks} (${chunk.length} records)...`,
     );
 
-    // Process current batch in parallel
-    const batchResults = await Promise.allSettled(
-      batch.map((id) => updateSingleRecord(id)),
-    );
+    const result = await editChunk(chunk);
+    if (result.success) {
+      successful.push(...result.ids);
+    } else {
+      failed.push(...result.ids);
+    }
 
-    // Collect results from this batch
-    batchResults.forEach((result) => {
-      if (result.status === "fulfilled") {
-        if (result.value.success) {
-          successful.push(result.value.registroId);
-        } else {
-          failed.push(result.value.registroId);
-        }
-      } else {
-        // This shouldn't happen since updateSingleRecord catches all errors
-        failed.push({ error: result.reason });
-      }
-    });
-
-    // Wait before processing next batch (except for the last batch)
-    if (i + BATCH_SIZE < registroIds.length) {
-      console.log(`⏳ Waiting ${BATCH_DELAY_MS}ms before next batch...`);
-      await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY_MS));
+    // Espera entre chunks (excepto el último) si se configuró un delay.
+    if (i + CHUNK_SIZE < registroIds.length && CHUNK_DELAY_MS > 0) {
+      await new Promise((resolve) => setTimeout(resolve, CHUNK_DELAY_MS));
     }
   }
 
@@ -547,19 +549,21 @@ export async function sendMonthlyReportEmail(
     `📊 Generating report for date range: ${rangeStart ? rangeStart.toISOString() : "all time"} to ${rangeEnd.toISOString()}`,
   );
 
+  // Lookups O(1) en vez de .find() por cada fila de fact_produccion (~21k).
+  const obraMap = new Map(rawTables.obra.map((o) => [o["Row ID"], o]));
+  const registroMap = new Map(
+    rawTables.registro_actividad.map((r) => [r["Row ID"], r]),
+  );
+
   // Filter records
   const reportData = transformedData.fact_produccion
     .filter((record) => {
       // Filter out COSTA RICA
-      const obraRecord = rawTables.obra.find(
-        (o) => o["Row ID"] === record.id_obra,
-      );
+      const obraRecord = obraMap.get(record.id_obra);
       if (obraRecord?.nombre_obra === "COSTA RICA") return false;
 
       // Filter by date range (hora_inicial)
-      const registroRecord = rawTables.registro_actividad.find(
-        (r) => r["Row ID"] === record.id_registro,
-      );
+      const registroRecord = registroMap.get(record.id_registro);
       if (!registroRecord?.hora_inicial) return false;
 
       // Filter by procesado_rrhh - only include unprocessed records
@@ -583,6 +587,16 @@ export async function sendMonthlyReportEmail(
     .map((record) => ({
       ...record,
     }));
+
+  // Guard de idempotencia: si no hay registros sin procesar, no se envía nada.
+  // Una entrega duplicada del scheduler re-extrae, ve todo procesado (el bulk Add
+  // termina en segundos) y aquí retorna sin mandar un segundo correo.
+  if (reportData.length === 0) {
+    console.log(
+      "ℹ️ No hay registros sin procesar en el rango. No se envía correo.",
+    );
+    return;
+  }
 
   const excelBuffer = await generateMonthlyReportExcel(
     reportData,
@@ -639,26 +653,27 @@ export async function sendMonthlyReportEmail(
 
   console.log(`📧 Monthly report email sent to: ${recipients}`);
 
-  const registroIds = reportData.map((record) => record.id_registro);
+  // Dedupe: fact_produccion genera filas extra por accesorio con el mismo
+  // id_registro. Sin esto marcaríamos (y contaríamos) el mismo registro 2 veces.
+  const registroIds = [...new Set(reportData.map((record) => record.id_registro))];
   console.log(
-    `📝 Updating procesado_rrhh for ${registroIds.length} records in parallel...`,
+    `📝 Marcando procesado_rrhh en ${registroIds.length} registros...`,
   );
 
-  const { successful, failed } =
-    await updateRegistrosProcesadoRRHH(registroIds);
+  const { successful, failed } = await updateRegistrosProcesadoRRHH(registroIds);
 
   if (successful.length > 0) {
     console.log(
-      `✅ Successfully updated ${successful.length} records in AppSheet`,
+      `✅ Successfully marked ${successful.length} registros as procesado_rrhh`,
     );
   }
 
   if (failed.length > 0) {
     console.error(
-      `❌ Failed to update ${failed.length} records: ${failed.join(", ")}`,
+      `❌ Failed to mark ${failed.length} registros: ${failed.join(", ")}`,
     );
     console.error(
-      `⚠️ Email was sent but ${failed.length} records were NOT marked as processed`,
+      `⚠️ Email was sent but ${failed.length} registros were NOT marked as processed`,
     );
   }
 }
