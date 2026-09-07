@@ -13,7 +13,7 @@ import nodemailer from "nodemailer";
 import { sendMissingDataEmail } from "./email/email.js";
 import { sendMonthlyReportEmail } from "./email/extrasReport.js";
 
-// --- Main HTTP Function ---
+// ---- Main HTTP Function ----
 functions.http("runEtl", async (req, res) => {
   if (req.method !== "POST") {
     return res.status(405).send("Method Not Allowed");
